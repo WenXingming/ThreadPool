@@ -1,17 +1,5 @@
-ThreadPool
-==========
+# C++ 通用线程池
 
-A simple C++11 Thread Pool implementation.
+> 学习过程中参考了： [progschj/ThreadPool](https://github.com/progschj/ThreadPool)
 
-Basic usage:
-```c++
-// create thread pool with 4 worker threads
-ThreadPool pool(4);
-
-// enqueue and store future
-auto result = pool.enqueue([](int answer) { return answer; }, 42);
-
-// get result from future
-std::cout << result.get() << std::endl;
-
-```
+使用了 C++ 11 的一些新特性。使用方式及样例见 test.cpp；
