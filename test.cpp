@@ -1,7 +1,7 @@
 #include "ThreadPool.h"
 
 // ==================================================================
-/// NOTE: TEST 线程池 main.cpp。一般的函数：RetType(Args...)
+/// NOTE: TEST 线程池，编译 test.cpp。一般的函数：RetType(Args...)
 
 int num = 0;
 std::mutex mtx;
