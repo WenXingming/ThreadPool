@@ -52,6 +52,36 @@ public:
         std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
     }
 
+    // func 不加完美转发，则它会把 func 当作一个左值来处理，哪怕调用者传进来的是一个右值（比如临时 lambda）
+    // 万能引用配合完美转发：std::forward
+    template<typename F, typename... Args>
+    auto submit_task(F&& func, Args&&... args)
+        -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
+
+        using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
+
+        // 使用 std::packaged_task 封装任务，以便获取 future
+        auto taskPtr = std::make_shared<std::packaged_task<RetType()>>( // packaged_task 无法拷贝，所以用指针传入 lambda
+            std::bind(std::forward<F>(func), std::forward<Args>(args)...)
+        );
+        std::future<RetType> res = taskPtr->get_future();
+
+        {
+            std::unique_lock<std::mutex> lock(tasksMutex);
+            if (stopFlag) {
+                throw std::runtime_error("submit_task on stopped ThreadPool!");
+            }
+
+            auto func = [taskPtr]() { // 无参，无返回值的 lambda
+                (*taskPtr)();
+                };
+            tasks.push(std::function<void()>(func));
+        }
+
+        condition.notify_one();
+        return res;
+    }
+
     void consume_task() {
         while (true) {
             Task task;
@@ -70,36 +100,5 @@ public:
             task();
         }
     }
-
-    // func 不加完美转发，则它会把 func 当作一个左值来处理，哪怕调用者传进来的是一个右值（比如临时 lambda）
-    // 万能引用配合完美转发：std::forward
-    template<typename F, typename... Args>
-    auto submit_task(F&& func, Args&&... args)
-        -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
-
-        using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
-
-        // 使用 std::packaged_task 封装任务，以便获取 future
-        auto task_ptr = std::make_shared<std::packaged_task<RetType()>>( // packaged_task 无法拷贝，所以用指针传入 lambda
-            std::bind(std::forward<F>(func), std::forward<Args>(args)...)
-        );
-        std::future<RetType> res = task_ptr->get_future();
-
-        {
-            std::unique_lock<std::mutex> lock(tasksMutex);
-            if (stopFlag) {
-                throw std::runtime_error("submit_task on stopped ThreadPool!");
-            }
-
-            // 使用 std::function 封装一个无参、无返回值的 lambda
-            // 这个 lambda 在被调用时会执行 packaged_task
-            std::function<void()> func = std::function<void()>([task_ptr]() {
-                (*task_ptr)();
-                });
-            tasks.push(func);
-        }
-
-        condition.notify_one();
-        return res;
-    }
+    
 };
