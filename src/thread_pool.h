@@ -16,8 +16,6 @@ using Task = std::function<void()>; // 任务抽象化，通用 Task，无参无
 
 class Thread_Pool {
 private:
-    static std::unique_ptr<Thread_Pool> threadPool; // 单例模式
-
     std::vector<std::thread> threads;
     std::queue<Task> tasks;
     std::mutex tasksMutex;
@@ -25,7 +23,7 @@ private:
     std::condition_variable condition; 	// 线程池中线程唤醒
     std::atomic<bool> stopFlag; 		// 构造时初始化为 false；析构时，置为 true，使各个线程退出。否则各个线程在死循环，无法退出从而无法 join()
 
-    // 单例模式，构造函数私有
+public:
     Thread_Pool() : Thread_Pool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
     Thread_Pool(int _size) : stopFlag(false) {
         int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
@@ -36,7 +34,7 @@ private:
         }
         std::cout << "thread pool is created success, size is: " << threads.size() << std::endl;
     }
-public:
+    
     Thread_Pool(const Thread_Pool& other) = delete;
     Thread_Pool& operator=(const Thread_Pool& other) = delete;
     Thread_Pool(const Thread_Pool&& other) = delete;
@@ -49,13 +47,6 @@ public:
             thread.join();
         }
         std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
-    }
-
-    static Thread_Pool& get_instance() {
-        if (threadPool == nullptr) {    // 非线程安全，可以加锁
-            threadPool.reset(new Thread_Pool());
-        }
-        return *threadPool;
     }
 
     void consume_task() {
@@ -109,5 +100,3 @@ public:
         return res;
     }
 };
-
-std::unique_ptr<Thread_Pool> Thread_Pool::threadPool = nullptr;
