@@ -14,7 +14,7 @@
 
 using Task = std::function<void()>; // 任务抽象化，通用 Task，无参无返回值
 
-class Thread_Pool {
+class ThreadPool {
 private:
     std::vector<std::thread> threads;
     std::queue<Task> tasks;
@@ -24,23 +24,26 @@ private:
     std::atomic<bool> stopFlag; 		// 构造时初始化为 false；析构时，置为 true，使各个线程退出。否则各个线程在死循环，无法退出从而无法 join()
 
 public:
-    Thread_Pool() : Thread_Pool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
-    Thread_Pool(int _size) : stopFlag(false) {
+    ThreadPool() : ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
+    ThreadPool(int _size) : stopFlag(false) {
         int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
         int size = std::min(hardwareSize, _size);
         for (int i = 0; i < size; ++i) {
-            std::thread t(&Thread_Pool::consume_task, this); // windows 上不取地址没事，ubuntu 上编译报错（为了通用可以用 lambda 或 std::bind）
+            auto threadFunc = [this]() {
+                this->consume_task();
+                };
+            std::thread t(threadFunc);
             threads.push_back(std::move(t)); 	// thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
         }
         std::cout << "thread pool is created success, size is: " << threads.size() << std::endl;
     }
     
-    Thread_Pool(const Thread_Pool& other) = delete;
-    Thread_Pool& operator=(const Thread_Pool& other) = delete;
-    Thread_Pool(const Thread_Pool&& other) = delete;
-    Thread_Pool& operator=(const Thread_Pool&& other) = delete;
+    ThreadPool(const ThreadPool& other) = delete;
+    ThreadPool& operator=(const ThreadPool& other) = delete;
+    ThreadPool(const ThreadPool&& other) = delete;
+    ThreadPool& operator=(const ThreadPool&& other) = delete;
 
-    ~Thread_Pool() {
+    ~ThreadPool() {
         stopFlag = true;
         condition.notify_all(); 		// 唤醒所有线程，让它们退出。感觉会有一个潜在的问题，如果此时剩的任务特别多...
         for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
@@ -85,7 +88,7 @@ public:
         {
             std::unique_lock<std::mutex> lock(tasksMutex);
             if (stopFlag) {
-                throw std::runtime_error("submit_task on stopped Thread_Pool!");
+                throw std::runtime_error("submit_task on stopped ThreadPool!");
             }
 
             // 使用 std::function 封装一个无参、无返回值的 lambda

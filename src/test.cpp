@@ -44,7 +44,7 @@ int run(int& _num) {
 int main() {
     std::vector<std::future<int>> results;
     {
-        Thread_Pool& pool = Thread_Pool::get_instance();
+        ThreadPool pool;
         for (int i = 0; i < 100; ++i) {
             std::future<int> res = pool.submit_task(run, std::ref(num));
             results.push_back(std::move(res));
