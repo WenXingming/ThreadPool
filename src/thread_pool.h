@@ -1,4 +1,12 @@
-/// @attention: 通用线程池。支持携带任何参数的任务函数（其返回值也可获取）
+/**
+ * @file thread_pool.h
+ * @brief 一个通用、高效的 C++ 线程池实现。
+ * @details 该线程池支持提交任何可调用对象作为任务，并能异步获取任务的返回值。利用了 C++11 的 std::packaged_task 和 std::future 实现任务管理和结果获取。
+ * @author wenxingming
+ * @date 2025-08-26
+ * @cite: https://github.com/progschj/ThreadPool/tree/master
+ */
+
 #pragma once
 #include <iostream>
 #include <vector>
@@ -100,5 +108,5 @@ public:
             task();
         }
     }
-    
+
 };
