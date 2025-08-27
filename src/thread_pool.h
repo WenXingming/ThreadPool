@@ -7,6 +7,9 @@
  * @cite: https://github.com/progschj/ThreadPool/tree/master
  */
 
+namespace wxm {
+
+
 #pragma once
 #include <iostream>
 #include <vector>
@@ -29,7 +32,7 @@ private:
     std::mutex tasksMutex;
 
     std::condition_variable condition; 	// 线程池中线程唤醒
-    std::atomic<bool> stopFlag; 		// 构造时初始化为 false；析构时，置为 true，使各个线程退出。否则各个线程在死循环，无法退出从而无法 join()
+    std::atomic<bool> stopFlag; 		// 构造时初始化为 false；析构时，置为 true。作用是使各个线程退出，否则各个线程在死循环，无法退出从而无法 join()
 
 public:
     ThreadPool() : ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
@@ -41,7 +44,7 @@ public:
                 this->consume_task();
                 };
             std::thread t(threadFunc);
-            threads.push_back(std::move(t)); 	// thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
+            threads.push_back(std::move(t)); // thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
         }
         std::cout << "thread pool is created success, size is: " << threads.size() << std::endl;
     }
@@ -53,7 +56,7 @@ public:
 
     ~ThreadPool() {
         stopFlag = true;
-        condition.notify_all(); 		// 唤醒所有线程，让它们退出。感觉会有一个潜在的问题，如果此时剩的任务特别多...
+        condition.notify_all();
         for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
             thread.join();
         }
@@ -69,7 +72,7 @@ public:
         using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
 
         // 使用 std::packaged_task 封装任务，以便获取 future
-        auto taskPtr = std::make_shared<std::packaged_task<RetType()>>( // packaged_task 无法拷贝，所以用指针传入 lambda
+        auto taskPtr = std::make_shared<std::packaged_task<RetType()>>( // packaged_task 禁用拷贝，所以用指针管理
             std::bind(std::forward<F>(func), std::forward<Args>(args)...)
         );
         std::future<RetType> res = taskPtr->get_future();
@@ -100,7 +103,7 @@ public:
                     });
 
                 if (!tasks.empty()) {                   // 要先把任务处理完
-                    task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move
+                    task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
                     tasks.pop();
                 }
                 else if (stopFlag) return;
@@ -110,3 +113,6 @@ public:
     }
 
 };
+
+
+}
