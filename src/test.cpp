@@ -26,7 +26,8 @@ int main() {
 }
 */
 
-#include "thread_pool.h"
+#include "ThreadPool.h"
+// using namespace wxm;
 
 // ==================================================================
 /// NOTE: TEST 线程池 main.cpp。一般的函数：RetType(Args...)
@@ -44,7 +45,7 @@ int run(int& _num) {
 int main() {
     std::vector<std::future<int>> results;
     {
-        ThreadPool pool;
+        wxm::ThreadPool pool;
         for (int i = 0; i < 100; ++i) {
             std::future<int> res = pool.submit_task(run, std::ref(num));
             results.push_back(std::move(res));
