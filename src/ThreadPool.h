@@ -23,6 +23,9 @@
 namespace wxm {
 
 
+/// =======================================================================
+/// NOTE: Declaration of class: ThreadPool
+
 using Task = std::function<void()>; // 任务抽象化，通用 Task，无参无返回值
 
 class ThreadPool {
@@ -39,8 +42,8 @@ public:
 	ThreadPool(int _size);
 	ThreadPool(const ThreadPool& other) = delete;
 	ThreadPool& operator=(const ThreadPool& other) = delete;
-	ThreadPool(const ThreadPool&& other) = delete;
-	ThreadPool& operator=(const ThreadPool&& other) = delete;
+	// ThreadPool(const ThreadPool&& other) = delete;
+	// ThreadPool& operator=(const ThreadPool&& other) = delete;
 	~ThreadPool();
 
 
@@ -53,8 +56,8 @@ public:
 
 
 
-/// =========================================================
-/// NOTE: Definitions of member functions
+/// =======================================================================
+/// NOTE: Definition of class's member functions
 
 inline ThreadPool::ThreadPool()
 	: ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
@@ -95,12 +98,13 @@ inline void ThreadPool::consume_task() {
 				return (!tasks.empty() || stopFlag);
 				});
 
-			if (!tasks.empty()) {                   // 要先把任务处理完
-				task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
-				tasks.pop();
-			}
-			else if (stopFlag) return;
-		}
+            if (!tasks.empty()) {                   // 要先把任务处理完
+                task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
+                tasks.pop();
+            }
+            else if (stopFlag) return;
+            else throw std::runtime_error("consume_task error!");
+        }
 		task();
 	}
 }
