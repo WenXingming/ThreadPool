@@ -59,85 +59,34 @@ public:
 /// =======================================================================
 /// NOTE: Definition of class's member functions
 
-inline ThreadPool::ThreadPool()
-	: ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
-
-
-inline ThreadPool::ThreadPool(int _size)
-	: stopFlag(false) {
-
-	int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
-	int size = std::min(hardwareSize, _size);
-	for (int i = 0; i < size; ++i) {
-		auto threadFunc = [this]() {
-			this->consume_task();
-			};
-		std::thread t(threadFunc);
-		threads.push_back(std::move(t)); // thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
-	}
-	std::cout << "thread pool is created success, size is: " << threads.size() << std::endl;
-}
-
-
-inline ThreadPool::~ThreadPool() {
-	stopFlag = true;
-	condition.notify_all();
-	for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
-		thread.join();
-	}
-	std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
-}
-
-
-inline void ThreadPool::consume_task() {
-	while (true) {
-		Task task;
-		{
-			std::unique_lock<std::mutex> lock(tasksMutex);
-			condition.wait(lock, [this]() {
-				return (!tasks.empty() || stopFlag);
-				});
-
-            if (!tasks.empty()) {                   // 要先把任务处理完
-                task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
-                tasks.pop();
-            }
-            else if (stopFlag) return;
-            else throw std::runtime_error("consume_task error!");
-        }
-		task();
-	}
-}
-
-
-// func 不加完美转发，则它会把 func 当作一个左值来处理，哪怕调用者传进来的是一个右值（比如临时 lambda）
-// 万能引用配合完美转发：std::forward
+/// @attention 模板函数的定义需要放在头文件中和声明在一起。如果放在 cpp 中不会实例化编译，只有在调用该函数时才会根据参数类型生成一个具体的函数版本
+/// @brief func 不加完美转发，则它会把 func 当作一个左值来处理，哪怕调用者传进来的是一个右值（比如临时 lambda）；万能引用配合完美转发：std::forward
 template<typename F, typename ...Args>
-inline auto ThreadPool::submit_task(F&& func, Args && ...args)
-	-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
+auto ThreadPool::submit_task(F&& func, Args && ...args)
+-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
 
-	using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
+    using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
 
-	// 使用 std::packaged_task 封装任务，以便获取 future
-	auto taskPtr = std::make_shared<std::packaged_task<RetType()>>( // packaged_task 禁用拷贝，所以用指针管理
-		std::bind(std::forward<F>(func), std::forward<Args>(args)...)
-	);
-	std::future<RetType> res = taskPtr->get_future();
+    // 使用 std::packaged_task 封装任务，以便获取 future
+    auto taskPtr = std::make_shared<std::packaged_task<RetType()>>( // packaged_task 禁用拷贝，所以用指针管理
+        std::bind(std::forward<F>(func), std::forward<Args>(args)...)
+    );
+    std::future<RetType> res = taskPtr->get_future();
 
-	{
-		std::unique_lock<std::mutex> lock(tasksMutex);
-		if (stopFlag) {
-			throw std::runtime_error("submit_task on stopped ThreadPool!");
-		}
+    {
+        std::unique_lock<std::mutex> lock(tasksMutex);
+        if (stopFlag) {
+            throw std::runtime_error("submit_task on stopped ThreadPool!");
+        }
 
-		auto func = [taskPtr]() { // 无参，无返回值的 lambda
-			(*taskPtr)();
-			};
-		tasks.push(std::function<void()>(func));
-	}
+        auto func = [taskPtr]() { // 无参，无返回值的 lambda
+            (*taskPtr)();
+            };
+        tasks.push(std::function<void()>(func));
+    }
 
-	condition.notify_one();
-	return res;
+    condition.notify_one();
+    return res;
 }
 
 
