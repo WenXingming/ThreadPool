@@ -36,7 +36,7 @@ void test_no_argument_no_ret() {
 
     Task task;
     {
-        wxm::ThreadPool pool;
+        wxm::ThreadPool pool(4);
         for (int i = 0; i < 200; ++i) {
             pool.submit_task(Task::task1);
         }
@@ -52,7 +52,7 @@ void test_have_argument_have_ret() {
     Task task;
     std::vector<std::future<int>> results;
     {
-        wxm::ThreadPool pool;
+        wxm::ThreadPool pool(4);
         for (int i = 0; i < 200; ++i) {
             std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num));
             results.push_back(std::move(res));
@@ -75,7 +75,7 @@ int main() {
     test_have_argument_have_ret();
     std::cout << std::endl;
     
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     test_no_argument_no_ret();
     std::cout << std::endl;

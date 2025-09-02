@@ -35,6 +35,7 @@ namespace wxm {
 	ThreadPool::~ThreadPool() {
 		stopFlag = true;
 		conditionProcess.notify_all();
+		std::cout << "current thread pool size: " << threads.size() << ". waiting for join()..." << std::endl;
 		for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
 			thread.join();
 		}
@@ -51,17 +52,33 @@ namespace wxm {
 					return (!tasks.empty() || stopFlag);
 					});
 
-				if (!tasks.empty()) {                   // 要先把任务处理完
-					task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
+				if (!tasks.empty()) {						// 要先把任务处理完
+					task = std::move(tasks.front());		// std::packaged_task<> 只支持 move，禁止拷贝
 					tasks.pop();
 				}
 				else if (stopFlag) return;
-				else throw std::runtime_error("process_task error!");
+				else throw std::runtime_error("process_task error!\n");
 			}
 			task();
 			conditionSubmit.notify_one();
 		}
 	}
 
-
+	void ThreadPool::expand_thread_pool() {
+		std::unique_lock<std::mutex> lock(threadsMutex);
+		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
+		if (threads.size() >= hardwareSize) { // 无法扩充了
+			std::cout << "thread_pool is MAX_SIZE: " << threads.size() << ", can't be expanded."
+					  << " you'd better slow down the speed of submitting task.\n";
+			return;
+		}
+		else {
+			auto threadFunc = [this]() {
+				this->process_task();
+				};
+			std::thread t(threadFunc);
+			threads.push_back(std::move(t));
+			std::cout << "thread_pool auto expand successful, now size is: " << threads.size() << std::endl;
+		}
+	}
 }

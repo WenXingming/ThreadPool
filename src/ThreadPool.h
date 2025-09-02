@@ -24,8 +24,8 @@
 namespace wxm {
 
 	using Task = std::function<void()>; // 任务抽象化，通用 Task，无参无返回值
-	const int MAX_TASK_QUEUE_SIZE = 5;
-
+	const int MAX_TASK_QUEUE_SIZE = 100;
+	const int MAX_WAIT_TIME = 100; 		// millseconds. 设置条件变量等待时间。添加任务和取任务时，如果队列满或空超过该时间，则动态扩缩线程池。
 
 	/// =======================================================================
 	/// NOTE: Declaration of class: ThreadPool
@@ -33,8 +33,9 @@ namespace wxm {
 	class ThreadPool {
 	private:
 		std::vector<std::thread> threads;
+		std::mutex threadsMutex;					// 扩展线程池时保证线程安全
 		std::queue<Task> tasks;
-		std::mutex tasksMutex;
+		std::mutex tasksMutex;						// 保证对任务队列的操作线程安全
 		const int maxTasksSize = MAX_TASK_QUEUE_SIZE;
 
 		std::condition_variable conditionProcess; 	// 处理任务的线程等待和被唤醒
@@ -57,6 +58,10 @@ namespace wxm {
 		template<typename F, typename... Args>
 		auto submit_task(F&& func, Args&&... args)
 			-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))>;
+
+		void expand_thread_pool();
+		void reduce_thread_pool();
+
 	};
 
 
@@ -79,18 +84,30 @@ namespace wxm {
 		// 提交任务
 		{
 			std::unique_lock<std::mutex> lock(tasksMutex);
-			conditionSubmit.wait(lock, [this]() {
+			bool retWait = conditionSubmit.wait_for(lock, std::chrono::milliseconds(MAX_WAIT_TIME), [this]() {
 				return (tasks.size() < maxTasksSize) || stopFlag;
-			});
-			if (stopFlag) { 
-				throw std::runtime_error("submit_task on stopped ThreadPool!"); 
-				assert(!stopFlag);
-			}
+				}
+			);
 
-			auto func = [taskPtr]() { // 无参，无返回值的 lambda
-				(*taskPtr)();
-				};
-			tasks.push(std::function<void()>(func));
+			if (retWait) {
+				if (tasks.size() < maxTasksSize) {
+					auto func = [taskPtr]() { // 无参，无返回值的 lambda
+					(*taskPtr)();
+					};
+					tasks.push(std::function<void()>(func));
+				}else{
+					throw std::runtime_error("submit_task on stopped ThreadPool!\n");
+				}
+			}
+			else { // 超时
+				lock.unlock();
+				expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
+				lock.lock();
+
+				tasks.push(std::function<void()>([taskPtr]() {
+					(*taskPtr)();
+					}));
+			}
 		}
 		conditionProcess.notify_one(); // 通知唤醒处理线程
 
