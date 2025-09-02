@@ -62,7 +62,8 @@ namespace wxm {
 				}
 				else {
 					uniqueLock.unlock();
-					reduce_thread_pool(); // 被认为是耗时操作，手动解锁
+					reduce_thread_pool(std::this_thread::get_id()); // 被认为是耗时操作，手动解锁
+					break; // 退出死循环，等待后续 join() 或 detach() 由操作系统回收资源
 				}
 
 			}
@@ -93,8 +94,18 @@ namespace wxm {
 	}
 
 
-	void ThreadPool::reduce_thread_pool() {
-		
+	void ThreadPool::reduce_thread_pool(std::thread::id threadId) {
+		std::unique_lock<std::mutex> uniqueLock(threadsMutex);
+		int index = 0;
+		for (int i = 0; i < threads.size(); ++i) {
+			if (threads[i].get_id() == threadId) {
+				index = i;
+				break;
+			}
+		}
+		std::thread t = std::move(threads[index]);
+		threads.erase(threads.begin() + index);
+		t.detach(); // 需要被销毁的线程本身调用 reduce_thread_pool，它并不能 join() 自己。所以让操作系统回收线程
 	}
 
 }

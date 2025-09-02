@@ -46,7 +46,7 @@ namespace wxm {
 		/// @param _threadsSize 线程池线程数量
 		/// @param _maxTasksSize 任务队列大小
 		/// @param _isAutoExpandReduce 是否打开自动线程池收缩功能
-		/// @param _maxWaitTime millseconds，理论上期望处理任务的速率【至少】为 velocity = (1 / _maxWaitTime) * numOfThread（单位数量 / s），其中 numOfThread 是提交任务的线程的数量（除非线程池自动扩容到最大也达不到该速度，此时硬件能力不够没有办法）。例如：如果期望每秒处理至少 5 个任务，但任务提交线程下则 5 = (1 / _maxWaitTime) * 1，计算得到 _maxWaitTime = 0.2s = 200 ms
+		/// @param _maxWaitTime millseconds，理论上期望处理任务的速率 velocity >= (1 / _maxWaitTime) * numOfThread（单位数量 / s），其中 numOfThread 是提交任务的线程的数量。若线程池大小不够，其会自动扩容直到满足该速率；如果扩容到最大核心数也达不到该速度，此时硬件能力不够没有办法，线程池大小保持在最大核心数。例如：如果期望每秒处理至少 5 个任务，单任务提交线程下则 5 = (1 / _maxWaitTime) * 1，计算得到应设定 _maxWaitTime = 0.2s = 200 ms
 		ThreadPool(int _threadsSize, int _maxTasksSize = 50, bool _isAutoExpandReduce = true, int _maxWaitTime = 1000); // 
 		ThreadPool();
 		ThreadPool(const ThreadPool& other) = delete;
@@ -63,7 +63,7 @@ namespace wxm {
 			-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))>;
 
 		void expand_thread_pool();
-		void reduce_thread_pool();
+		void reduce_thread_pool(std::thread::id threadId); // velocity <= (1 / _maxWaitTime) * numOfThreads（单位数量 / s），其中 numOfThreads 是线程池中线程的数量
 
 	};
 
@@ -104,13 +104,12 @@ namespace wxm {
 				}
 			}
 			else { // 超时
-				uniqueLock.unlock();
-				expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
-				uniqueLock.lock();
-
 				tasks.push(std::function<void()>([taskPtr]() {
 					(*taskPtr)();
 					}));
+				
+				uniqueLock.unlock();
+				expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
 			}
 		}
 		conditionProcess.notify_one(); // 通知唤醒处理线程

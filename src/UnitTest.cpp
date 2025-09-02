@@ -17,7 +17,7 @@ class Task {
 public:
     static int num;
     static std::mutex mtx;
-    static const int taskNum = 500;
+    static const int taskNum = 200;
 
     static void task1() { // 无参无返回值
         auto lock = std::unique_lock<std::mutex>(mtx);
@@ -47,12 +47,12 @@ void test_no_argument_no_ret() {
     try{
         Task task;
         {
-            wxm::ThreadPool pool(1);        // Test thread pool auto expand
-            // wxm::ThreadPool pool(20);    // Test thread pool auto reduce
+            // wxm::ThreadPool pool(1);        // Test thread pool auto expand
+            wxm::ThreadPool pool(20);    // Test thread pool auto reduce
             for (int i = 0; i < Task::taskNum; ++i) {
                 pool.submit_task(Task::task1);
+                std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Test thread pool auto reduce
             }
-            std::this_thread::sleep_for(std::chrono::seconds(5)); // 等待处理完成
         }
     }
     catch (const std::runtime_error& e) {
@@ -73,10 +73,11 @@ void test_have_argument_have_ret() {
         Task task;
         std::vector<std::future<int>> results;
         {
-            wxm::ThreadPool pool(1);
-            // wxm::ThreadPool pool(20);
+            // wxm::ThreadPool pool(1);
+            wxm::ThreadPool pool(20);
             for (int i = 0; i < Task::taskNum; ++i) {
                 std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num));
+                std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Test thread pool auto reduce
                 results.push_back(std::move(res));
             }
 
@@ -86,8 +87,9 @@ void test_have_argument_have_ret() {
 
             std::cout << "Output the results: \n";
             for (auto& future : results) {
-                std::cout << future.get() << '\n';
+                std::cout << future.get();
             }
+            std::cout << '\n';
         }
     }
     catch (const std::exception& e) {
