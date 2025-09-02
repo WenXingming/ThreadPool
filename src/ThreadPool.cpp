@@ -9,10 +9,9 @@
  */
 
 #include "ThreadPool.h"
-
 namespace wxm {
 
-
+	/// @brief 默认构造函数创建硬件核数的线程数量
 	ThreadPool::ThreadPool()
 		: ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
 
@@ -60,6 +59,7 @@ namespace wxm {
 				else throw std::runtime_error("process_task error!");
 			}
 			task();
+			conditionSubmit.notify_one();
 		}
 	}
 
