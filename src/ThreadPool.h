@@ -34,8 +34,8 @@ namespace wxm {
 		std::queue<Task> tasks;
 		std::mutex tasksMutex;
 
-		std::condition_variable condition; 	// 线程池中线程唤醒
-		std::atomic<bool> stopFlag; 		// 构造时初始化为 false；析构时，置为 true。作用是使各个线程退出，否则各个线程在死循环，无法退出从而无法 join()
+		std::condition_variable conditionProcess; 	// 处理任务的线程唤醒
+		std::atomic<bool> stopFlag; 				// 构造时初始化为 false；析构时，置为 true。作用是使线程池各个线程退出，否则各个线程在死循环，无法退出从而无法 join()
 
 	public:
 		ThreadPool();
@@ -47,7 +47,7 @@ namespace wxm {
 		~ThreadPool();
 
 
-		void consume_task();
+		void process_task();
 
 		template<typename F, typename... Args>
 		auto submit_task(F&& func, Args&&... args)
@@ -85,7 +85,7 @@ namespace wxm {
 			tasks.push(std::function<void()>(func));
 		}
 
-		condition.notify_one();
+		conditionProcess.notify_one();
 		return res;
 	}
 

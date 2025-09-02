@@ -36,7 +36,7 @@ std::mutex mtx;
 int run(int& _num) {
     auto lock = std::unique_lock<std::mutex>(mtx);
     int res = _num++;
-    std::cout << "processing(processed) thread id and task id:" << std::dec << std::this_thread::get_id() << '\t' << num << std::endl;
+    std::cout << "processing(processed) thread id:" << std::dec << std::this_thread::get_id() << "\tand task id: " << num << std::endl;
     lock.unlock();
     std::this_thread::sleep_for(std::chrono::seconds(1)); // 模拟每个线程需要 1s 执行时间
     return res;

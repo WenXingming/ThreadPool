@@ -24,7 +24,7 @@ namespace wxm {
 		int size = std::min(hardwareSize, _size);
 		for (int i = 0; i < size; ++i) {
 			auto threadFunc = [this]() {
-				this->consume_task();
+				this->process_task();
 				};
 			std::thread t(threadFunc);
 			threads.push_back(std::move(t)); // thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
@@ -35,7 +35,7 @@ namespace wxm {
 
 	ThreadPool::~ThreadPool() {
 		stopFlag = true;
-		condition.notify_all();
+		conditionProcess.notify_all();
 		for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
 			thread.join();
 		}
@@ -43,12 +43,12 @@ namespace wxm {
 	}
 
 
-	void ThreadPool::consume_task() {
+	void ThreadPool::process_task() {
 		while (true) {
 			Task task;
 			{
 				std::unique_lock<std::mutex> lock(tasksMutex);
-				condition.wait(lock, [this]() {
+				conditionProcess.wait(lock, [this]() {
 					return (!tasks.empty() || stopFlag);
 					});
 
@@ -57,7 +57,7 @@ namespace wxm {
 					tasks.pop();
 				}
 				else if (stopFlag) return;
-				else throw std::runtime_error("consume_task error!");
+				else throw std::runtime_error("process_task error!");
 			}
 			task();
 		}
