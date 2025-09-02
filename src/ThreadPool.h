@@ -36,7 +36,7 @@ namespace wxm {
 		std::mutex tasksMutex;							// 保证对任务队列的操作线程安全
 		const int maxTasksSize;
 		bool isAutoExpandReduce;
-		const int maxWaitTime;
+		const int maxWaitTime;							// 设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
 
 		std::condition_variable conditionProcess; 		// 处理任务的线程等待和被唤醒
 		std::condition_variable conditionSubmit;		// 提交任务的线程等待和被唤醒
@@ -46,7 +46,7 @@ namespace wxm {
 		/// @param _threadsSize 线程池线程数量
 		/// @param _maxTasksSize 任务队列大小
 		/// @param _isAutoExpandReduce 是否打开自动线程池收缩功能
-		/// @param _maxWaitTime millseconds。设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
+		/// @param _maxWaitTime millseconds，理论上期望处理任务的速率【至少】为 velocity = (1 / _maxWaitTime) * numOfThread（单位数量 / s），其中 numOfThread 是提交任务的线程的数量（除非线程池自动扩容到最大也达不到该速度，此时硬件能力不够没有办法）。例如：如果期望每秒处理至少 5 个任务，但任务提交线程下则 5 = (1 / _maxWaitTime) * 1，计算得到 _maxWaitTime = 0.2s = 200 ms
 		ThreadPool(int _threadsSize, int _maxTasksSize = 50, bool _isAutoExpandReduce = true, int _maxWaitTime = 1000); // 
 		ThreadPool();
 		ThreadPool(const ThreadPool& other) = delete;
