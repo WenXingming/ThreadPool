@@ -34,7 +34,8 @@ namespace wxm {
 		std::mutex threadsMutex;						// 扩展线程池时保证线程安全
 		std::queue<Task> tasks;
 		std::mutex tasksMutex;							// 保证对任务队列的操作线程安全
-		const int maxTasksSize;	
+		const int maxTasksSize;
+		bool isAutoExpandReduce;
 		const int maxWaitTime;
 
 		std::condition_variable conditionProcess; 		// 处理任务的线程等待和被唤醒
@@ -42,9 +43,12 @@ namespace wxm {
 		std::atomic<bool> stopFlag; 					// 线程池停止标志。作用是使线程池各个线程从循环退出，否则各个线程在循环无法退出从而无法 join()
 
 	public:
-		ThreadPool();
+		/// @param _threadsSize 线程池线程数量
+		/// @param _maxTasksSize 任务队列大小
+		/// @param _isAutoExpandReduce 是否打开自动线程池收缩功能
 		/// @param _maxWaitTime millseconds。设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
-		ThreadPool(int _threadsSize, int _maxTasksSize = 50, int _maxWaitTime = 1000); // 
+		ThreadPool(int _threadsSize, int _maxTasksSize = 50, bool _isAutoExpandReduce = true, int _maxWaitTime = 1000); // 
+		ThreadPool();
 		ThreadPool(const ThreadPool& other) = delete;
 		ThreadPool& operator=(const ThreadPool& other) = delete;
 		ThreadPool(const ThreadPool&& other) = delete;

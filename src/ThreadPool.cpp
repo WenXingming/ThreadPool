@@ -16,8 +16,9 @@ namespace wxm {
 		: ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
 
 
-	ThreadPool::ThreadPool(int _threadsSize, int _maxTasksSize, int _maxWaitTime)
-		: stopFlag(false), maxTasksSize(_maxTasksSize), maxWaitTime(_maxWaitTime){
+	ThreadPool::ThreadPool(int _threadsSize, int _maxTasksSize, bool _isAutoExpandReduce, int _maxWaitTime)
+		: stopFlag(false)
+		, maxTasksSize(_maxTasksSize), isAutoExpandReduce(_isAutoExpandReduce),maxWaitTime(_maxWaitTime){
 
 		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
 		int size = std::min(hardwareSize, _threadsSize);
