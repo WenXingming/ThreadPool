@@ -107,7 +107,7 @@ namespace wxm {
 				tasks.push(std::function<void()>([taskPtr]() {
 					(*taskPtr)();
 					}));
-				
+
 				uniqueLock.unlock();
 				expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
 			}
