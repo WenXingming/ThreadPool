@@ -52,14 +52,14 @@ void test_no_argument_no_ret() {
             if (IS_TEST_AUTO_EXPAND_REDUCE && !IS_AUTO_EXPAND) {
                 wxm::ThreadPool pool(20, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000);       // Test thread pool auto reduce
                 for (int i = 0; i < Task::taskNum; ++i) {
-                    pool.submit_task(Task::task1);
+                    pool.submit_task(&Task::task1);
                     std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Test thread pool auto reduce
                 }
             }
             else{
                 wxm::ThreadPool pool(2, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
                 for (int i = 0; i < Task::taskNum; ++i) {
-                    pool.submit_task(Task::task1);
+                    pool.submit_task(&Task::task1);
                 }
             }
         }

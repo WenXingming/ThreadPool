@@ -8,7 +8,7 @@
    // UnitTest.cpp 中的示例：无参无返回值任务的提交
    wxm::ThreadPool pool(2, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000);
    for (int i = 0; i < Task::taskNum; ++i) {
-       pool.submit_task(Task::task1);
+       pool.submit_task(&Task::task1);
    }
    
    // UnitTest.cpp 中的示例：有参有返回值任务的提交以及结果的获取
