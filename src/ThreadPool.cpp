@@ -18,7 +18,7 @@ namespace wxm {
 
 	ThreadPool::ThreadPool(int _threadsSize, int _maxTasksSize, bool _isAutoExpandReduce, int _maxWaitTime)
 		: stopFlag(false)
-		, maxTasksSize(_maxTasksSize), isAutoExpandReduce(_isAutoExpandReduce),maxWaitTime(_maxWaitTime){
+		, maxTasksSize(_maxTasksSize), isAutoExpandReduce(_isAutoExpandReduce), maxWaitTime(_maxWaitTime) {
 
 		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
 		int size = std::min(hardwareSize, _threadsSize);
@@ -46,31 +46,40 @@ namespace wxm {
 
 	void ThreadPool::process_task() {
 		while (true) {
-			Task task;
+			Task task = nullptr;
 			{
-				std::unique_lock<std::mutex> lock(tasksMutex);
-				conditionProcess.wait(lock, [this]() {
+				std::unique_lock<std::mutex> uniqueLock(tasksMutex);
+				bool retWait = conditionProcess.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
 					return (!tasks.empty() || stopFlag);
 					});
 
-				if (!tasks.empty()) {						// 要先把任务处理完
-					task = std::move(tasks.front());		// std::packaged_task<> 只支持 move，禁止拷贝
-					tasks.pop();
+				if (retWait) {
+					if (!tasks.empty()) {						// 要先把任务处理完
+						task = std::move(tasks.front());		// std::packaged_task<> 只支持 move，禁止拷贝
+						tasks.pop();
+					}
+					else return; // 线程池终止。退出循环（线程），后续 join()
 				}
-				else if (stopFlag) return;
-				else throw std::runtime_error("process_task error!\n");
+				else {
+					uniqueLock.unlock();
+					reduce_thread_pool(); // 被认为是耗时操作，手动解锁
+				}
+
 			}
-			task();
-			conditionSubmit.notify_one();
+			if (task) {
+				task();
+				conditionSubmit.notify_one();
+			}
 		}
 	}
 
+
 	void ThreadPool::expand_thread_pool() {
-		std::unique_lock<std::mutex> lock(threadsMutex);
+		std::unique_lock<std::mutex> uniqueLock(threadsMutex);
 		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
 		if (threads.size() >= hardwareSize) { // 无法扩充了
 			std::cout << "thread_pool is MAX_SIZE: " << threads.size() << ", can't be expanded."
-					  << " you'd better slow down the speed of submitting task.\n";
+				<< " you'd better slow down the speed of submitting task.\n";
 			return;
 		}
 		else {
@@ -82,4 +91,10 @@ namespace wxm {
 			std::cout << "thread_pool auto expand successful, now size is: " << threads.size() << std::endl;
 		}
 	}
+
+
+	void ThreadPool::reduce_thread_pool() {
+		
+	}
+
 }

@@ -86,8 +86,8 @@ namespace wxm {
 		std::future<RetType> res = taskPtr->get_future();
 		// 提交任务
 		{
-			std::unique_lock<std::mutex> lock(tasksMutex);
-			bool retWait = conditionSubmit.wait_for(lock, std::chrono::milliseconds(maxWaitTime), [this]() {
+			std::unique_lock<std::mutex> uniqueLock(tasksMutex);
+			bool retWait = conditionSubmit.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
 				return (tasks.size() < maxTasksSize) || stopFlag;
 				}
 			);
@@ -95,17 +95,18 @@ namespace wxm {
 			if (retWait) {
 				if (tasks.size() < maxTasksSize) {
 					auto func = [taskPtr]() { // 无参，无返回值的 lambda
-					(*taskPtr)();
-					};
+						(*taskPtr)();
+						};
 					tasks.push(std::function<void()>(func));
-				}else{
+				}
+				else {
 					throw std::runtime_error("submit_task on stopped ThreadPool!\n");
 				}
 			}
 			else { // 超时
-				lock.unlock();
+				uniqueLock.unlock();
 				expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
-				lock.lock();
+				uniqueLock.lock();
 
 				tasks.push(std::function<void()>([taskPtr]() {
 					(*taskPtr)();
