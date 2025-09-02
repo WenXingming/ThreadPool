@@ -13,55 +13,55 @@
 namespace wxm {
 
 
-ThreadPool::ThreadPool()
-    : ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
+	ThreadPool::ThreadPool()
+		: ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
 
 
-ThreadPool::ThreadPool(int _size)
-    : stopFlag(false) {
+	ThreadPool::ThreadPool(int _size)
+		: stopFlag(false) {
 
-    int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
-    int size = std::min(hardwareSize, _size);
-    for (int i = 0; i < size; ++i) {
-        auto threadFunc = [this]() {
-            this->consume_task();
-            };
-        std::thread t(threadFunc);
-        threads.push_back(std::move(t)); // thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
-    }
-    std::cout << "thread pool is created success, size is: " << threads.size() << std::endl;
-}
-
-
-ThreadPool::~ThreadPool() {
-    stopFlag = true;
-    condition.notify_all();
-    for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
-        thread.join();
-    }
-    std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
-}
+		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
+		int size = std::min(hardwareSize, _size);
+		for (int i = 0; i < size; ++i) {
+			auto threadFunc = [this]() {
+				this->consume_task();
+				};
+			std::thread t(threadFunc);
+			threads.push_back(std::move(t)); // thread　对象只支持　move，一个线程最多只能由一个 thread 对象持有
+		}
+		std::cout << "thread pool is created success, size is: " << threads.size() << std::endl;
+	}
 
 
-void ThreadPool::consume_task() {
-    while (true) {
-        Task task;
-        {
-            std::unique_lock<std::mutex> lock(tasksMutex);
-            condition.wait(lock, [this]() {
-                return (!tasks.empty() || stopFlag);
-                });
+	ThreadPool::~ThreadPool() {
+		stopFlag = true;
+		condition.notify_all();
+		for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
+			thread.join();
+		}
+		std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
+	}
 
-            if (!tasks.empty()) {                   // 要先把任务处理完
-                task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
-                tasks.pop();
-            }
-            else if (stopFlag) return;
-            else throw std::runtime_error("consume_task error!");
-        }
-        task();
-    }
-}
+
+	void ThreadPool::consume_task() {
+		while (true) {
+			Task task;
+			{
+				std::unique_lock<std::mutex> lock(tasksMutex);
+				condition.wait(lock, [this]() {
+					return (!tasks.empty() || stopFlag);
+					});
+
+				if (!tasks.empty()) {                   // 要先把任务处理完
+					task = std::move(tasks.front()); 	// std::packaged_task<> 只支持 move，禁止拷贝
+					tasks.pop();
+				}
+				else if (stopFlag) return;
+				else throw std::runtime_error("consume_task error!");
+			}
+			task();
+		}
+	}
 
 
 }
