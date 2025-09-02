@@ -23,9 +23,7 @@
 #include <cassert>
 namespace wxm {
 
-	using Task = std::function<void()>; // 任务抽象化，通用 Task，无参无返回值
-	const int MAX_TASK_QUEUE_SIZE = 100;
-	const int MAX_WAIT_TIME = 100; 		// millseconds. 设置条件变量等待时间。添加任务和取任务时，如果队列满或空超过该时间，则动态扩缩线程池。
+	using Task = std::function<void()>; 	// 任务抽象化，通用 Task，无参无返回值
 
 	/// =======================================================================
 	/// NOTE: Declaration of class: ThreadPool
@@ -33,21 +31,22 @@ namespace wxm {
 	class ThreadPool {
 	private:
 		std::vector<std::thread> threads;
-		std::mutex threadsMutex;					// 扩展线程池时保证线程安全
+		std::mutex threadsMutex;						// 扩展线程池时保证线程安全
 		std::queue<Task> tasks;
-		std::mutex tasksMutex;						// 保证对任务队列的操作线程安全
-		const int maxTasksSize = MAX_TASK_QUEUE_SIZE;
+		std::mutex tasksMutex;							// 保证对任务队列的操作线程安全
+		const int maxTasksSize;	
+		const int maxWaitTime;
 
-		std::condition_variable conditionProcess; 	// 处理任务的线程等待和被唤醒
-		std::condition_variable conditionSubmit;	// 提交任务的线程等待和被唤醒
-		std::atomic<bool> stopFlag; 				// 线程池停止标志。作用是使线程池各个线程从循环退出，否则各个线程在循环无法退出从而无法 join()
+		std::condition_variable conditionProcess; 		// 处理任务的线程等待和被唤醒
+		std::condition_variable conditionSubmit;		// 提交任务的线程等待和被唤醒
+		std::atomic<bool> stopFlag; 					// 线程池停止标志。作用是使线程池各个线程从循环退出，否则各个线程在循环无法退出从而无法 join()
 
 	public:
 		ThreadPool();
-		ThreadPool(int _size);
+		/// @param _maxWaitTime millseconds。设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
+		ThreadPool(int _threadsSize, int _maxTasksSize = 50, int _maxWaitTime = 1000); // 
 		ThreadPool(const ThreadPool& other) = delete;
 		ThreadPool& operator=(const ThreadPool& other) = delete;
-		// 按理说可以移动，但比较麻烦懒得写（不写移动构造会退化调用拷贝构造，拷贝构造被禁止了，可能编译错误）。直接禁止移动
 		ThreadPool(const ThreadPool&& other) = delete;
 		ThreadPool& operator=(const ThreadPool&& other) = delete;
 		~ThreadPool();
@@ -84,7 +83,7 @@ namespace wxm {
 		// 提交任务
 		{
 			std::unique_lock<std::mutex> lock(tasksMutex);
-			bool retWait = conditionSubmit.wait_for(lock, std::chrono::milliseconds(MAX_WAIT_TIME), [this]() {
+			bool retWait = conditionSubmit.wait_for(lock, std::chrono::milliseconds(maxWaitTime), [this]() {
 				return (tasks.size() < maxTasksSize) || stopFlag;
 				}
 			);
