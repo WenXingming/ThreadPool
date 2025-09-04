@@ -111,7 +111,7 @@ namespace wxm {
 
 
 		void expand_thread_pool();
-		void reduce_thread_pool(std::thread::id threadId); // velocity <= (1 / _maxWaitTime) * numOfThreads（单位数量 / s），其中 numOfThreads 是线程池中线程的数量
+		void reduce_thread_pool(std::thread::id threadId); // velocity >= (1 / _maxWaitTime) * numOfThreads（单位数量 / s），其中 numOfThreads 是线程池中线程的数量
 
 	};
 
