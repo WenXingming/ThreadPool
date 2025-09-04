@@ -1,41 +1,61 @@
 # C++ 通用线程池
 
-一个简单实用的线程池，使用方式及样例见 UnitTest.cpp。**该线程池的特性有**：
+**一个简单实用的线程池，使用方式及样例详见 UnitTest.cpp**。该线程池具有以下特性：
 
-1. **使用方式非常简单**！只需将 `ThreadPool.h` 和 `ThreadPool.cpp` 文件添加到你的项目中，在使用到的地方将头文件 `ThreadPool.h` 包含进来即可。然后就可以使用`wxm::ThreadPool pool;`（可指定构造函数的参数）创建线程池，然后提交任务了！
+1. **使用简单便捷**。只需将 `ThreadPool.h` 和 `ThreadPool.cpp` 添加到项目中，并在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。
 
    ```C++
-   // UnitTest.cpp 中的示例：无参无返回值任务的提交
-   wxm::ThreadPool pool(2, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000);
-   for (int i = 0; i < Task::taskNum; ++i) {
-       pool.submit_task(&Task::task1);
+   // UnitTest.cpp 中的测试示例：无参无返回值任务的提交（void test_no_argument_no_ret()）
+   int initialSize = 24;
+   wxm::ThreadPool pool(initialSize, 50, false, 1000);
+   try {
+       for (int i = 0; i < Task::taskNum; ++i) {
+           pool.submit_task(&Task::task1);
+       }
+   }
+   catch (const std::exception& e) {
+       std::cerr << e.what() << std::endl;
    }
    
-   // UnitTest.cpp 中的示例：有参有返回值任务的提交以及结果的获取
-   wxm::ThreadPool pool(2, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000);
-   for (int i = 0; i < Task::taskNum; ++i) {
-       std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num));
-       results.push_back(std::move(res));
-   }
+   // UnitTest.cpp 中的示例：有参有返回值任务的提交以及结果的获取（）
+   int initialSize = 24;
+   wxm::ThreadPool pool(initialSize, 50, false, 1000);
+   try {
+       std::vector<std::future<int>> results;
+       for (int i = 0; i < Task::taskNum; ++i) {
+           std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num)); // 异步获取结果
+           results.push_back(std::move(res));
+       }
    
-   for (auto& future : results) {
-       future.wait();
-   }
+       for (auto& future : results) {
+           future.wait(); // 异步等待结果
+       }
    
-   std::cout << "Output the results: \n";
-   for (auto& future : results) {
-       std::cout << future.get() << ' ';
+       std::cout << "Output the results: \n";
+       for (auto& future : results) {
+           std::cout << future.get() << ' ';
+       }
+       std::cout << '\n';
    }
-   std::cout << '\n';
+   catch (const std::exception& e) {
+       std::cerr << e.what() << std::endl;
+   }
    ```
 
-2. **支持任何任务的异步执行和结果获取**。使用了 `std::packaged_task`、`std::future` 来异步获取任务的返回值。
+2. **支持任何任务的异步执行和结果获取**。可执行任意类型的任务，并通过 `std::future` 异步获取任务返回值。
 
-3. **支持设定期望的任务处理速率，线程池据此动态调整线程池大小**。该选项在创建线程池时可以进行参数（`_maxWaitTime`）设置，线程池会根据该参数动态调整线程池的大小，以满足预期的任务处理速率。如果任务的平均处理时间超过了该值，线程池会自动增加工作线程的数量；反之，如果任务的处理时间远低于该值，线程池会减少工作线程的数量，从而提高资源利用率。详细解释一下该参数：
+3. **支持线程池自动伸缩**。通过构造函数参数 `_maxWaitTime` 设定期望的任务处理速率，线程池将据此自动调整线程数量以满足性能需求。具体解释如下：
 
-   - **理论上期望处理任务的速率 velocity >= (1 / _maxWaitTime) * numOfThread（单位数量 / s）**，其中 numOfThread 是**提交任务的线程的数量**（非线程池大小）。若线程池大小不够，其会自动扩容直到满足该速率；如果扩容到最大核心数也达不到该速度，此时硬件能力不够没有办法，线程池大小将保持在最大核心数。**例如：如果期望每秒处理至少 5 个任务，如果只有单个任务提交线程，则 5 = (1 / _maxWaitTime) * 1，计算得到应设定 _maxWaitTime = 0.2 s = 200 ms**
-   - **理论上 velocity <= (1 / _maxWaitTime) * numOfThreads（单位数量 / s）**，其中 numOfThreads 是线程池中线程的数量。如果线程池的处理能力大于任务提交的速率，线程池会自动减少工作线程的数量，直到线程池大小达到满足 velocity 条件下线程池大小的下界。
+   - **理论上期望处理速率 $\mathrm{ Expect(v) \geq (1/\\_maxWaitTime) \times numOfThread }$（单位：任务/秒）**，其中 $\mathrm{numOfThread}$ 为**提交任务的线程数量**（非线程池大小）。若当前线程池无法达到该速率，其会自动扩容直到满足该速率或直至线程数量达到最大核心数。若扩容到最大核心数也达不到期望速率，此时属于硬件性能受限，线程池将维持在最大核心数。
 
-4. **More features await coding**...
+     **举例**：若期望每秒处理 5 个任务，且仅有一个任务提交线程，则 $\mathrm{5 = (1/\\_maxWaitTime) \times 1}$，可计算得 $\mathrm{\\_maxWaitTime = 0.2\ s = 200\ ms}$。
 
-**Tips**：代码中使用了 C++ 11 的一些新特性。<ins>代码注释完善易于理解，如果对你有用，请给个 Star 🤞🤞🤞，非常感谢！</ins>
+   - **理论上实际处理速率 $\mathrm{ Real(v) \geq (1/\\_maxWaitTime) \times numOfThreads}$（单位：任务/秒）**，其中 $\mathrm{numOfThreads}$ 为**线程池中线程数量**。若线程池处理能力超出任务提交速率，线程池将自动缩减线程数量，直到线程池大小达到满足 $\mathrm{E(v)}$ 条件下线程池大小的下界。。
+
+   通常逻辑是，用户设想一个预期处理速率（单位：任务/秒），然后计算并设置 `_maxWaitTime`。若任务执行时间较长导致实际任务处理速率低于预期，线程池将自动扩容直至满足要求或达到最大核心数；若线程池处理能力超出任务提交速率，线程池将自动缩减线程数量。
+
+4. **支持优先级调度**。向线程池提交任务时可指定任务优先级（int 类型），数值越大优先级越高；不传入任务的优先级则优先级统一默认为 0。线程池将根据任务队列中任务的优先级进行调度（若不设置任务优先级，即任务优先级相同为 0，此时默认 FCFS 调度）。用户可将优先级视为任务等级（rank）或预估执行时间（此时类似最短任务优先调度）。请注意：该机制仅保证高优先级任务先被调度，而不保证其先执行完成（这和任务本身相关，线程池无法保证）。
+
+5. **More features await coding**...
+
+**提示**：本代码使用了 C++11 特性。<ins>代码注释详尽、易于理解。如果对您有帮助，欢迎给予 Star 🤞🤞🤞，非常感谢！</ins>

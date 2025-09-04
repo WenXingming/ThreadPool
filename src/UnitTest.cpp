@@ -44,7 +44,7 @@ void test_no_argument_no_ret() {
     std::cout << "Testing no_argument_no_ret: \n";
 
     int initialSize = 24;
-    wxm::ThreadPool pool(initialSize, 50, false, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
+    wxm::ThreadPool pool(initialSize, 50, false, 1000);
     initialSize = pool.get_thread_pool_size();
     try {
         for (int i = 0; i < Task::taskNum; ++i) {
@@ -67,7 +67,7 @@ void test_have_argument_have_ret() {
     std::cout << "Testing have_argument_have_ret: \n";
 
     int initialSize = 24;
-    wxm::ThreadPool pool(initialSize, 50, false, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
+    wxm::ThreadPool pool(initialSize, 50, false, 1000);
     initialSize = pool.get_thread_pool_size();
     try {
         std::vector<std::future<int>> results;
@@ -78,7 +78,7 @@ void test_have_argument_have_ret() {
         }
 
         for (auto& future : results) {
-            future.wait(); // 异步获取结果
+            future.wait(); // 异步等待结果
         }
 
         std::cout << "Output the results: \n";
@@ -179,7 +179,7 @@ void test_thread_pool_priority_schedule() {
     std::cout << "Testing test_thread_pool_priority_schedule: \n";
 
     int threadPoolInitialSize = 1; // 线程池设置为最小
-    wxm::ThreadPool pool(threadPoolInitialSize, 100, false, 1000); // 队列上限 > taskNum（不然打印 50,51...99, 49, 48,...1）
+    wxm::ThreadPool pool(threadPoolInitialSize, 100, false, 1000); // 设置队列上限 > taskNum，优先级调度结果更直观（不然打印类似 50,51...99, 49, 48,...1）
     threadPoolInitialSize = pool.get_thread_pool_size();
     assert(threadPoolInitialSize == 1);
     try {
@@ -204,7 +204,7 @@ void test_thread_pool_priority_schedule() {
     }
 
     int threadPoolOverSize = pool.get_thread_pool_size();
-    assert(threadPoolInitialSize == threadPoolOverSize); // Test result. Auto reduce.
+    assert(threadPoolInitialSize == threadPoolOverSize);
     std::cout << "Testing test_thread_pool_priority_schedule success. \n";
 }
 

@@ -164,7 +164,7 @@ namespace wxm {
 		return res;
 	}
 
-	/// @brief 函数重载，提交任务时支持设置优先级（int）。值越大优先级越高（用户可以将优先级看作一个 rank，或者自己预估的执行时间（最短任务优先调度）） 
+	/// @brief 函数重载，提交任务时支持设置优先级（int），值越大优先级越高。用户可以将优先级看作一个 rank，或者自己预估的执行时间（最短任务优先调度）） 
 	template<typename F, typename... Args>
 	auto wxm::ThreadPool::submit_task(int _priority, F&& func, Args && ...args)
 		-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
