@@ -46,7 +46,7 @@ namespace wxm {
 
 	void ThreadPool::process_task() {
 		while (true) {
-			Task task = nullptr;
+			Task task;
 			{
 				std::unique_lock<std::mutex> uniqueLock(tasksMutex);
 				bool retWait = conditionProcess.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
@@ -55,7 +55,7 @@ namespace wxm {
 
 				if (retWait) {
 					if (!tasks.empty()) {						// 要先把任务处理完
-						task = std::move(tasks.front());		// std::packaged_task<> 只支持 move，禁止拷贝
+						task = std::move(tasks.top());		// std::packaged_task<> 只支持 move，禁止拷贝
 						tasks.pop();
 					}
 					else return; // 线程池终止。退出循环（线程），后续 join()
@@ -67,8 +67,8 @@ namespace wxm {
 				}
 
 			}
-			if (task) {
-				task();
+			if (task.getPriority() != INT_MIN) { // 取出了任务
+				task.execute();
 				conditionSubmit.notify_one();
 			}
 		}

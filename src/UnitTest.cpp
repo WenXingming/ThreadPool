@@ -57,7 +57,7 @@ void test_no_argument_no_ret() {
                 }
             }
             else{
-                wxm::ThreadPool pool(2, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
+                wxm::ThreadPool pool(1, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
                 for (int i = 0; i < Task::taskNum; ++i) {
                     pool.submit_task(&Task::task1);
                 }
@@ -101,7 +101,7 @@ void test_have_argument_have_ret() {
                 std::cout << '\n';
             }
             else {
-                wxm::ThreadPool pool(2, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
+                wxm::ThreadPool pool(1, 50, IS_TEST_AUTO_EXPAND_REDUCE, 1000); // Test thread pool auto expand or no IS_TEST_AUTO_EXPAND_REDUCE
                 for (int i = 0; i < Task::taskNum; ++i) {
                     std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num));
                     results.push_back(std::move(res));
@@ -127,12 +127,12 @@ void test_have_argument_have_ret() {
 }
 
 int main() {
-    test_have_argument_have_ret();
+    test_no_argument_no_ret();
     std::cout << std::endl;
 
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
-    test_no_argument_no_ret();
+    test_have_argument_have_ret();
     std::cout << std::endl;
 
     std::cout << "All tests passed.\n";
