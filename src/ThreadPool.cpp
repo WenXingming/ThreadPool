@@ -16,12 +16,12 @@ namespace wxm {
 		: ThreadPool(std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency()) {}
 
 
-	ThreadPool::ThreadPool(int _threadsSize, int _maxTasksSize, bool _isAutoExpandReduce, int _maxWaitTime)
+	ThreadPool::ThreadPool(int _threadsSize, int _maxTasksSize, bool _openAutoExpandReduce, int _maxWaitTime)
 		: stopFlag(false)
-		, maxTasksSize(_maxTasksSize), isAutoExpandReduce(_isAutoExpandReduce), maxWaitTime(_maxWaitTime) {
+		, maxTasksSize(_maxTasksSize), openAutoExpandReduce(_openAutoExpandReduce), maxWaitTime(_maxWaitTime) {
 
 		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
-		int size = std::min(hardwareSize, _threadsSize);
+		int size = std::min(_threadsSize, hardwareSize);
 		for (int i = 0; i < size; ++i) {
 			auto threadFunc = [this]() {
 				this->process_task();
@@ -36,11 +36,16 @@ namespace wxm {
 	ThreadPool::~ThreadPool() {
 		stopFlag = true;
 		conditionProcess.notify_all();
-		std::cout << "current thread pool size: " << threads.size() << ". waiting for join()..." << std::endl;
 		for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
 			thread.join();
 		}
+		std::cout << "current thread pool size: " << threads.size() << ", all threads joined." << std::endl;
 		std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
+	}
+
+	int ThreadPool::get_thread_pool_size() {
+		std::unique_lock<std::mutex> uniqueLock(threadsMutex);
+		return threads.size();
 	}
 
 
@@ -62,7 +67,7 @@ namespace wxm {
 				}
 				else {
 					uniqueLock.unlock();
-					reduce_thread_pool(std::this_thread::get_id()); // 被认为是耗时操作，手动解锁
+					if (openAutoExpandReduce) reduce_thread_pool(std::this_thread::get_id()); // 超时，线程池处理速度高于任务提交速度，需要缩减线程池。被认为是耗时操作，手动解锁
 					break; // 退出死循环，等待后续 join() 或 detach() 由操作系统回收资源
 				}
 
@@ -96,16 +101,24 @@ namespace wxm {
 
 	void ThreadPool::reduce_thread_pool(std::thread::id threadId) {
 		std::unique_lock<std::mutex> uniqueLock(threadsMutex);
-		int index = 0;
-		for (int i = 0; i < threads.size(); ++i) {
-			if (threads[i].get_id() == threadId) {
-				index = i;
-				break;
-			}
+		if (threads.size() <= 1) {
+			std::cout << "thread_pool is 1: " << threads.size() << ", can't be reduced."
+				<< " please submit_task.\n";
+			return;
 		}
-		std::thread t = std::move(threads[index]);
-		threads.erase(threads.begin() + index);
-		t.detach(); // 需要被销毁的线程本身调用 reduce_thread_pool，它并不能 join() 自己。所以让操作系统回收线程
+		else {
+			int index = 0;
+			for (int i = 0; i < threads.size(); ++i) {
+				if (threads[i].get_id() == threadId) {
+					index = i;
+					break;
+				}
+			}
+			std::thread t = std::move(threads[index]);
+			threads.erase(threads.begin() + index);
+			t.detach(); // 需要被销毁的线程本身调用 reduce_thread_pool，它并不能 join() 自己。所以让操作系统回收线程
+			std::cout << "thread_pool auto reduce successful, now size is: " << threads.size() << std::endl;
+		}
 	}
 
 }

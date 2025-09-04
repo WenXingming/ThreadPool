@@ -28,19 +28,19 @@ namespace wxm {
 	/// NOTE: Declaration of class: Task（Abstract task）
 	class Task {
 	private:
-		int priority;						// 优先级，数字越大优先级越高
-		int64_t timestamp;					// 时间戳，用于 FCFS
-		std::function<void()> function;		// 实际的任务函数
+		int priority;										// 优先级，数字越大优先级越高
+		std::chrono::steady_clock::time_point timestamp;	// 时间戳（不用整数，精度不够），用于 FCFS
+		std::function<void()> function;						// 实际的任务函数
 
 	public:
 		// 安全：在类定义内部实现的成员函数默认是内联的（多个源文件同时包含 task 类，链接时不会重定义）
 		Task() : priority(INT_MIN), function(nullptr) {
-			timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+			timestamp = std::chrono::steady_clock::now();
 		}
 
-		Task(std::function<void()> _func, int _priority = 1) // 任务函数是通用 function（只有线程池 submit_task() 入口是模板参数）
+		Task(std::function<void()> _func, int _priority = 0) // 任务函数是通用 function（只有线程池 submit_task() 入口是模板参数）
 			: priority(_priority), function(_func) {
-			timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+			timestamp = std::chrono::steady_clock::now();
 		}
 
 		// 注意比较 (Compare) 形参的定义，使得若其第一参数在弱序中先于其第二参数则返回 true
@@ -56,12 +56,17 @@ namespace wxm {
 		void execute() {
 			if (function) {
 				function();
+				if (priority != INT_MIN && priority != 0) std::cout << "priority is: " << priority << std::endl; // debug
 			}
 			else throw std::runtime_error("task's function is empty, can't not execute.");
 		}
 
 		int getPriority() const { return priority; }
-		int64_t getTimestamp() const { return timestamp; }
+		/// @brief 将 time_point 转换为自纪元以来的秒（seconds）计数
+		int64_t getTimestamp() const {
+			auto duration = timestamp.time_since_epoch();
+			return std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+		}
 	};
 
 
@@ -78,7 +83,7 @@ namespace wxm {
 		std::condition_variable conditionSubmit;		// 提交任务的线程等待和被唤醒
 		std::atomic<bool> stopFlag; 					// 线程池停止标志。作用是使线程池各个线程从循环退出，否则各个线程在循环无法退出从而无法 join()
 
-		bool isAutoExpandReduce;
+		bool openAutoExpandReduce;
 		const int maxWaitTime;							// 设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
 		std::mutex threadsMutex;						// 扩展线程池时保证线程安全
 
@@ -87,17 +92,20 @@ namespace wxm {
 		/// @param _maxTasksSize 任务队列大小
 		/// @param _isAutoExpandReduce 是否打开自动线程池收缩功能
 		/// @param _maxWaitTime millseconds，理论上期望处理任务的速率 velocity >= (1 / _maxWaitTime) * numOfThread（单位数量 / s），其中 numOfThread 是提交任务的线程的数量。若线程池大小不够，其会自动扩容直到满足该速率；如果扩容到最大核心数也达不到该速度，此时硬件能力不够没有办法，线程池大小保持在最大核心数。例如：如果期望每秒处理至少 5 个任务，单任务提交线程下则 5 = (1 / _maxWaitTime) * 1，计算得到应设定 _maxWaitTime = 0.2s = 200 ms
-		ThreadPool(int _threadsSize, int _maxTasksSize = 50, bool _isAutoExpandReduce = false, int _maxWaitTime = 1000); // 
+		ThreadPool(int _threadsSize, int _maxTasksSize = 50, bool _openAutoExpandReduce = false, int _maxWaitTime = 1000); // 
 		ThreadPool();
 		ThreadPool(const ThreadPool& other) = delete;
 		ThreadPool& operator=(const ThreadPool& other) = delete;
 		ThreadPool(const ThreadPool&& other) = delete;
 		ThreadPool& operator=(const ThreadPool&& other) = delete;
 		~ThreadPool();
-
+		int get_thread_pool_size();
 
 		template<typename F, typename... Args>
 		auto submit_task(F&& func, Args&&... args)
+			-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))>;
+		template<typename F, typename... Args>
+		auto submit_task(int _priority, F&& func, Args&&... args)
 			-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))>;
 		void process_task();
 
@@ -142,12 +150,13 @@ namespace wxm {
 				else throw std::runtime_error("submit_task on stopped ThreadPool!");
 			}
 			else { // 超时，需要扩增线程池提高处理能力
-				auto func = [taskPtr]() { (*taskPtr)(); };
-				auto task = Task(std::function<void()>(func));
+				auto funcLambda = [taskPtr]() { (*taskPtr)(); };
+				auto func = std::function<void()>(funcLambda);
+				auto task = std::move(Task(func));
 				tasks.push(task);
 
 				uniqueLock.unlock();
-				expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
+				if (openAutoExpandReduce) expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
 			}
 		}
 		conditionProcess.notify_one();
@@ -155,5 +164,46 @@ namespace wxm {
 		return res;
 	}
 
+	/// @brief 函数重载，提交任务时支持设置优先级（int）。值越大优先级越高（用户可以将优先级看作一个 rank，或者自己预估的执行时间（最短任务优先调度）） 
+	template<typename F, typename... Args>
+	auto wxm::ThreadPool::submit_task(int _priority, F&& func, Args && ...args)
+		-> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
+
+		using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
+		auto taskPtr = std::make_shared<std::packaged_task<RetType()>>(
+			std::bind(std::forward<F>(func), std::forward<Args>(args)...)
+		);
+		std::future<RetType> res = taskPtr->get_future();
+
+		{
+			std::unique_lock<std::mutex> uniqueLock(tasksMutex);
+			bool retWait = conditionSubmit.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
+				return (tasks.size() < maxTasksSize) || stopFlag;
+				}
+			);
+
+			if (retWait) {
+				if (tasks.size() < maxTasksSize) {
+					auto funcLambda = [taskPtr]() { (*taskPtr)(); };
+					auto func = std::function<void()>(funcLambda);
+					auto task = std::move(Task(func, _priority));
+					tasks.push(task);
+				}
+				else throw std::runtime_error("submit_task on stopped ThreadPool!");
+			}
+			else {
+				auto funcLambda = [taskPtr]() { (*taskPtr)(); };
+				auto func = std::function<void()>(funcLambda);
+				auto task = std::move(Task(func, _priority));
+				tasks.push(task);
+
+				uniqueLock.unlock();
+				if (openAutoExpandReduce) expand_thread_pool();
+			}
+		}
+		conditionProcess.notify_one();
+
+		return res;
+	}
 
 }
