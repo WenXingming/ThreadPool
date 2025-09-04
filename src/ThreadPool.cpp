@@ -83,8 +83,8 @@ namespace wxm {
 	void ThreadPool::expand_thread_pool() {
 		std::unique_lock<std::mutex> uniqueLock(threadsMutex);
 		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
-		if (threads.size() >= hardwareSize) { // 无法扩充了
-			std::cout << "thread_pool is MAX_SIZE: " << threads.size() << ", can't be expanded."
+		if (threads.size() >= 2 * hardwareSize) { // 线程池最大线程数量设定为 2 * hardwareSize（如需要自定义设置再修改类，增添变量 maxThreadsSize）
+			std::cout << "thread_pool is MAX_SIZE（2 * hardwareSize）: " << threads.size() << ", can't be expanded."
 				<< " you'd better slow down the speed of submitting task.\n";
 			return;
 		}
