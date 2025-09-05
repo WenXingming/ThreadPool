@@ -21,7 +21,7 @@ namespace wxm {
 		, maxTasksSize(_maxTasksSize), openAutoExpandReduce(_openAutoExpandReduce), maxWaitTime(_maxWaitTime) {
 
 		int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
-		int size = std::min(_threadsSize, hardwareSize);
+		int size = std::min(_threadsSize, 2 * hardwareSize);
 		for (int i = 0; i < size; ++i) {
 			auto threadFunc = [this]() {
 				this->process_task();
