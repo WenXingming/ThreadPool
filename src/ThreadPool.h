@@ -34,17 +34,19 @@ private:
     std::vector<std::thread> threads;
     std::priority_queue<Task> tasks;
     std::mutex tasksMutex;							// 保证对任务队列的操作线程安全
-    const int maxTasksSize;
+    std::atomic<int> maxTasksSize;
 
     std::condition_variable conditionProcess; 		// 处理任务的线程等待和被唤醒
     std::condition_variable conditionSubmit;		// 提交任务的线程等待和被唤醒
     std::atomic<bool> stopFlag; 					// 线程池停止标志。作用是使线程池各个线程从循环退出，否则各个线程在循环无法退出从而无法 join()
 
-    bool openAutoExpandReduce;
-    const int maxWaitTime;							// 设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
+    std::atomic<bool> openAutoExpandReduce;
+    std::atomic<int> maxWaitTime;					// 设置条件变量等待时间。添加任务和取任务时，如果队列满或空等待超过该时间，则动态扩缩线程池。
     std::mutex threadsMutex;						// 扩展线程池时保证线程安全
 
 private:
+    void process_task();
+
     void expand_thread_pool();
     void reduce_thread_pool(std::thread::id threadId); // velocity >= (1 / _maxWaitTime) * numOfThreads（单位数量 / s），其中 numOfThreads 是线程池中线程的数量
 
@@ -68,9 +70,14 @@ public:
     auto submit_task(int _priority, F&& func, Args&&... args)
         -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))>;
 
-    void process_task();
 
     int get_thread_pool_size();
+    int get_max_tasks_size() { return maxTasksSize; }
+    void set_max_tasks_size(int _size) { maxTasksSize = _size; }
+    void enable_auto_expand_reduce() { openAutoExpandReduce = true; }
+    void disable_auto_expand_reduce() { openAutoExpandReduce = false; }
+    int get_max_wait_time() { return maxWaitTime; }
+    void set_max_wait_time(int _ms) { maxWaitTime = _ms; }
 };
 
 

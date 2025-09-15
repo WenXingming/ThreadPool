@@ -1,0 +1,19 @@
+%%{init: {
+    "theme": "default",
+    "themeVariables": {
+        "fontFamily": "Times New Roman",
+        "fontSize": "20px"
+    }
+}}%%
+
+sequenceDiagram
+    
+    actor one
+    participant ThreadPool
+
+    one ->> ThreadPool: std::future<type> res = submit_task()
+
+    activate ThreadPool
+    ThreadPool->>ThreadPool: process_task()
+    ThreadPool ->> one: std::future<type> res
+    deactivate ThreadPool
