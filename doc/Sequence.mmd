@@ -11,7 +11,7 @@ sequenceDiagram
     actor one
     participant ThreadPool
 
-    one ->> ThreadPool: std::future<type> res = submit_task()
+    one ->> ThreadPool: std::future<type> res = submit_task(func, args...)
 
     activate ThreadPool
     ThreadPool->>ThreadPool: process_task()

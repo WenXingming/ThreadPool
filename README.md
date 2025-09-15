@@ -1,5 +1,29 @@
 # C++ 通用线程池
 
+```mermaid
+
+%%{init: {
+    "theme": "default",
+    "themeVariables": {
+        "fontFamily": "Times New Roman",
+        "fontSize": "20px"
+    }
+}}%%
+
+sequenceDiagram
+    
+    actor one
+    participant ThreadPool
+
+    one ->> ThreadPool: std::future<type> res = submit_task(func, args...)
+
+    activate ThreadPool
+    ThreadPool->>ThreadPool: process_task()
+    ThreadPool ->> one: std::future<type> res
+    deactivate ThreadPool
+
+```
+
 **一个简单实用的线程池，使用方式及样例详见 UnitTest.cpp**。该线程池具有以下特性：
 
 1. **使用简单便捷**。只需在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。
