@@ -213,6 +213,41 @@ void test_thread_pool_priority_schedule() {
     std::cout << "Testing test_thread_pool_priority_schedule success. \n";
 }
 
+/// @brief 测试相同优先级下，根据时间戳排序（FCFS）
+void test_thread_pool_priority_schedule_2() {
+    std::cout << "==========================================================\n";
+    std::cout << "Testing test_thread_pool_priority_schedule_2: \n";
+    Task::num = 0;
+
+    int threadPoolInitialSize = 1; // 线程池设置为最小
+    wxm::ThreadPool pool(threadPoolInitialSize, 100, false, 1000);
+    threadPoolInitialSize = pool.get_thread_pool_size();
+    assert(threadPoolInitialSize == 1);
+    try {
+        std::vector<std::future<int>> results;
+        for (int i = 0; i < Task::taskNum; ++i) {
+            std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num)); // 不添加任务优先级，默认 0
+            results.push_back(std::move(res));
+        }
+
+        for (auto& future : results) {
+            future.wait();
+        }
+
+        std::cout << "Output the results: \n";
+        for (auto& future : results) {
+            std::cout << future.get() << ' ';
+        }
+        std::cout << '\n';
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+
+    int threadPoolOverSize = pool.get_thread_pool_size();
+    assert(threadPoolInitialSize == threadPoolOverSize);
+    std::cout << "Testing test_thread_pool_priority_schedule_2 success. \n";
+}
 
 int main() {
     test_no_argument_no_ret();
@@ -232,6 +267,10 @@ int main() {
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
     test_thread_pool_priority_schedule();
+    std::cout << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+    test_thread_pool_priority_schedule_2();
     std::cout << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
