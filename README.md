@@ -2,7 +2,7 @@
 
 **一个简单实用的线程池，使用方式及样例详见 UnitTest.cpp**。该线程池具有以下特性：
 
-1. **使用简单便捷**。只需将 `ThreadPool.h` 和 `ThreadPool.cpp` 添加到项目中，并在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。
+1. **使用简单便捷**。只需在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。
 
    ```C++
    // UnitTest.cpp 中的测试示例：无参无返回值任务的提交（见 test_no_argument_no_ret()）
