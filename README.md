@@ -16,11 +16,18 @@ sequenceDiagram
     participant ThreadPool
 
     one ->> ThreadPool: std::future<type> res = submit_task(func, args...)
+    one ->> ThreadPool:
+    one ->> ThreadPool:
+    one ->> ThreadPool:
 
     activate ThreadPool
     ThreadPool->>ThreadPool: process_task()
     ThreadPool ->> one: std::future<type> res
     deactivate ThreadPool
+
+    ThreadPool ->> one:
+    ThreadPool ->> one:
+    ThreadPool ->> one:
 
 ```
 
