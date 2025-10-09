@@ -36,8 +36,8 @@ private:
     std::mutex tasksMutex;							// 保证对任务队列的操作线程安全
     std::atomic<int> maxTasksSize;
 
-    std::condition_variable conditionProcess; 		// 处理任务的线程等待和被唤醒
-    std::condition_variable conditionSubmit;		// 提交任务的线程等待和被唤醒
+    std::condition_variable notEmpty; 		// 处理任务的线程等待和被唤醒
+    std::condition_variable notFull;		// 提交任务的线程等待和被唤醒
     std::atomic<bool> stopFlag; 					// 线程池停止标志。作用是使线程池各个线程从循环退出，否则各个线程在循环无法退出从而无法 join()
 
     std::atomic<bool> openAutoExpandReduce;
@@ -97,7 +97,7 @@ auto ThreadPool::submit_task(F&& func, Args && ...args)
     // 提交任务到任务队列
     {
         std::unique_lock<std::mutex> uniqueLock(tasksMutex);
-        bool retWait = conditionSubmit.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
+        bool retWait = notFull.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
             return (tasks.size() < maxTasksSize) || stopFlag;
             }
         );
@@ -121,7 +121,7 @@ auto ThreadPool::submit_task(F&& func, Args && ...args)
             if (openAutoExpandReduce) expand_thread_pool(); // 认为是耗时操作，所以先解锁 taskQue 的锁
         }
     }
-    conditionProcess.notify_one();
+    notEmpty.notify_one();
 
     return res;
 }
@@ -140,7 +140,7 @@ auto wxm::ThreadPool::submit_task(int _priority, F&& func, Args && ...args)
 
     {
         std::unique_lock<std::mutex> uniqueLock(tasksMutex);
-        bool retWait = conditionSubmit.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
+        bool retWait = notFull.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
             return (tasks.size() < maxTasksSize) || stopFlag;
             }
         );
@@ -164,7 +164,7 @@ auto wxm::ThreadPool::submit_task(int _priority, F&& func, Args && ...args)
             if (openAutoExpandReduce) expand_thread_pool();
         }
     }
-    conditionProcess.notify_one();
+    notEmpty.notify_one();
 
     return res;
 }

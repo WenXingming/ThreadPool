@@ -35,7 +35,7 @@ ThreadPool::ThreadPool(int _threadsSize, int _maxTasksSize, bool _openAutoExpand
 
 ThreadPool::~ThreadPool() {
     stopFlag = true;
-    conditionProcess.notify_all();
+    notEmpty.notify_all();
     for (auto& thread : threads) { 	// 一个线程只能被一个 std::thread 对象管理, 复制构造/赋值被禁用。所以用 &
         thread.join();
     }
@@ -54,7 +54,7 @@ void ThreadPool::process_task() {
         Task task;
         {
             std::unique_lock<std::mutex> uniqueLock(tasksMutex);
-            bool retWait = conditionProcess.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
+            bool retWait = notEmpty.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime), [this]() {
                 return (!tasks.empty() || stopFlag);
                 });
 
@@ -74,7 +74,7 @@ void ThreadPool::process_task() {
         }
         if (task.get_priority() != INT_MIN) { // 取出了任务
             task.execute();
-            conditionSubmit.notify_one();
+            notFull.notify_one();
         }
     }
 }

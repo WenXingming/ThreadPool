@@ -49,9 +49,9 @@ public:
             function();
         }
         else throw std::runtime_error("task's function is empty, can't not execute.");
-
+        /// TODO: 注释掉 std::cout
         std::cout << "priority is: " << priority
-            << ". time is: " << timestamp.time_since_epoch().count() << std::endl; // debug, 测试优先级调度和 FCFS
+            << ". time is: " << timestamp.time_since_epoch().count() << std::endl; // debug, 测试优先级调度和 FCFS。实际使用时注释掉
     }
 
     int get_priority() const { return priority; }
