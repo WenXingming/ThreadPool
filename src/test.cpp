@@ -1,6 +1,6 @@
 /**
- * @file UnitTest.cpp
- * @brief 线程池单元测试：测试提交任何任务类型并异步获取任务结果；测试自动扩缩；测试优先级调度等
+ * @file test.cpp
+ * @brief 线程池测试：测试提交任何任务类型并异步获取任务结果；测试自动扩缩；测试优先级调度等
  * @details
  * @author wenxingming
  * @date 2025-09-02
