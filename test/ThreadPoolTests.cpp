@@ -49,56 +49,74 @@ TEST(ThreadPoolTest, AllSubmittedTasksAreExecuted) {
     EXPECT_EQ(counter.load(), 50);
 }
 
-TEST(ThreadPoolTest, HigherPriorityTaskRunsFirstWhenQueued) {
+TEST(ThreadPoolTest, HigherPriorityTaskRunsFirstAfterWorkerIsBlocked) {
     wxm::ThreadPool pool(1, 16, false, 1000);
+
+    std::promise<void> blockerStarted;
+    std::future<void> blockerStartedFuture = blockerStarted.get_future();
 
     std::promise<void> releaseBlocker;
     std::shared_future<void> blockerFuture(releaseBlocker.get_future());
+
     std::vector<int> executionOrder;
     std::mutex orderMutex;
 
-    auto blocker = pool.submit_task(0, [&blockerFuture]() {
+    // 让 blocker 优先级最高，保证被优先取到并阻塞 worker
+    auto blocker = pool.submit_task(1000, [&]() {
+        blockerStarted.set_value();
         blockerFuture.wait();
         });
+
+    // 确认 worker 已进入 blocker
+    ASSERT_EQ(blockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     auto lowPriority = pool.submit_task(1, [&executionOrder, &orderMutex]() {
         std::lock_guard<std::mutex> lock(orderMutex);
         executionOrder.push_back(1);
         });
+
     auto highPriority = pool.submit_task(100, [&executionOrder, &orderMutex]() {
         std::lock_guard<std::mutex> lock(orderMutex);
         executionOrder.push_back(100);
         });
 
-    // submit_task 返回时任务已经入队，释放 blocker 后应先执行高优先级任务。
     releaseBlocker.set_value();
 
-    blocker.wait();
-    lowPriority.wait();
-    highPriority.wait();
+    ASSERT_EQ(blocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(lowPriority.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(highPriority.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     ASSERT_EQ(executionOrder.size(), 2u);
     EXPECT_EQ(executionOrder[0], 100);
     EXPECT_EQ(executionOrder[1], 1);
 }
 
-TEST(ThreadPoolTest, SamePriorityUsesFifoOrderWhenQueued) {
+TEST(ThreadPoolTest, SamePriorityUsesFifoAfterWorkerIsBlocked) {
     wxm::ThreadPool pool(1, 16, false, 1000);
+
+    std::promise<void> blockerStarted;
+    std::future<void> blockerStartedFuture = blockerStarted.get_future();
 
     std::promise<void> releaseBlocker;
     std::shared_future<void> blockerFuture(releaseBlocker.get_future());
+
     std::vector<int> executionOrder;
     std::mutex orderMutex;
 
-    auto blocker = pool.submit_task(0, [&blockerFuture]() {
+    auto blocker = pool.submit_task(1000, [&]() {
+        blockerStarted.set_value();
         blockerFuture.wait();
         });
+
+    ASSERT_EQ(blockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     auto first = pool.submit_task(10, [&executionOrder, &orderMutex]() {
         std::lock_guard<std::mutex> lock(orderMutex);
         executionOrder.push_back(1);
         });
+
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
     auto second = pool.submit_task(10, [&executionOrder, &orderMutex]() {
         std::lock_guard<std::mutex> lock(orderMutex);
         executionOrder.push_back(2);
@@ -106,9 +124,9 @@ TEST(ThreadPoolTest, SamePriorityUsesFifoOrderWhenQueued) {
 
     releaseBlocker.set_value();
 
-    blocker.wait();
-    first.wait();
-    second.wait();
+    ASSERT_EQ(blocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(first.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(second.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     ASSERT_EQ(executionOrder.size(), 2u);
     EXPECT_EQ(executionOrder[0], 1);

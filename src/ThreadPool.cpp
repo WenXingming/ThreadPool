@@ -22,6 +22,10 @@ ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandRed
     , openAutoExpandReduce_(openAutoExpandReduce)
     , maxWaitTime_(maxWaitTimeMs)
     , threadsMutex_() {
+
+    assert(maxTasksSize > 0);
+    assert(maxWaitTimeMs > 0);
+
     int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
     if (threadCount < 1) {
         threadCount = 1;
@@ -71,26 +75,31 @@ void ThreadPool::process_task() {
     while (true) {
         Task task;
         std::unique_lock<std::mutex> uniqueLock(tasksMutex_);
-        bool ready = this->wait_not_empty_or_stop(uniqueLock);
+        auto pred = [this]() {
+            return stopFlag_.load() || (!tasks_.empty());
+            };
+        bool ready = notEmpty_.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime_.load()), pred);
+
+        // empty && not stop
         if (!ready) {
-            uniqueLock.unlock();
+            uniqueLock.unlock(); // 提前解锁，因为后续逻辑可能较耗时
             if (openAutoExpandReduce_) {
                 reduce_thread_pool(std::this_thread::get_id());
             }
-            break;
-        }
-        if (!tasks_.empty()) {
-            task = std::move(tasks_.top());
-            tasks_.pop();
-        }
-        else {
-            return;
+            else std::this_thread::yield(); // 普通模式或未启用自动缩容时让出 CPU，避免频繁无效轮询
+            continue; // 下一次循环继续取任务执行
         }
 
-        if (task.get_priority() != INT_MIN) {
-            notFull_.notify_one();
-            task.run();
+        // stop || not empty
+        if (stopFlag_.load()) {
+            break;
         }
+        task = std::move(tasks_.top());
+        tasks_.pop();
+        uniqueLock.unlock(); // 提前解锁，因为后续执行任务可能较耗时
+
+        notFull_.notify_one();
+        task.run();
     }
 }
 
@@ -142,18 +151,6 @@ bool ThreadPool::wait_not_empty_or_stop(std::unique_lock<std::mutex>& lock) {
             (!tasks_.empty());
         };
     return notEmpty_.wait_for(
-        lock,
-        std::chrono::milliseconds(maxWaitTime_.load()),
-        pred
-    );
-}
-
-bool ThreadPool::wait_not_full_or_stop(std::unique_lock<std::mutex>& lock) {
-    auto pred = [this]() {
-        return stopFlag_.load() ||
-            (tasks_.size() < static_cast<size_t>(maxTasksSize_.load()));
-        };
-    return notFull_.wait_for(
         lock,
         std::chrono::milliseconds(maxWaitTime_.load()),
         pred

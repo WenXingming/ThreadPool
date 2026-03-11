@@ -35,7 +35,7 @@ sequenceDiagram
 
 1. **使用简单便捷**。只需在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。无参无返回值任务的提交示例：
     ```C++
-    int initialSize = 24;
+    int initialSize = 2;
     wxm::ThreadPool pool(initialSize, 50, false, 1000);
     try {
         for (int i = 0; i < Task::taskNum; ++i) {
@@ -50,7 +50,8 @@ sequenceDiagram
     带返回值任务的提交示例：
 
     ```C++
-    wxm::ThreadPool pool(3, 32, false, 1000);
+    int initialSize = 3;
+    wxm::ThreadPool pool(initialSize, 50, false, 1000);
     std::future<int> result = pool.submit_task([](int left, int right) {
         return left * right;
     }, 6, 7);

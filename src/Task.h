@@ -34,9 +34,9 @@ public:
 
     bool operator<(const Task& other) const {
         if (priority_ != other.priority_) {
-            return priority_ < other.priority_;
+            return priority_ < other.priority_; // 若其第一参数在弱序中先于其第二参数则返回 true，弱序置于堆低（优先级低的）
         }
-        return other.timestamp_ < timestamp_;
+        return timestamp_ > other.timestamp_;   // 同优先级时，时间戳大的（后来）的是弱序，置于堆低（后来的任务后执行）
     }
 
     void run() {
@@ -58,9 +58,9 @@ public:
     }
 
 private:
-    int priority_;
-    std::chrono::steady_clock::time_point timestamp_;
-    std::function<void()> function_;
+    int priority_;                                      // 优先级，数值越大优先级越高
+    std::chrono::steady_clock::time_point timestamp_;   // 任务入队时间戳，用于同优先级任务的 FCFS 排序规则
+    std::function<void()> function_;                    // 待执行的任务函数，封装为 std::function<void()> 以支持任意可调用对象
 };
 
 }

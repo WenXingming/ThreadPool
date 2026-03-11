@@ -21,6 +21,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <cassert>
 
 #include "Task.h"
 
@@ -28,7 +29,7 @@ namespace wxm {
 
 class ThreadPool {
 public:
-    ThreadPool(int threadCount = 1, int maxTasksSize = 100, bool openAutoExpandReduce = false, int maxWaitTimeMs = 1000);
+    ThreadPool(int threadCount = 1, int maxTasksSize = 50, bool openAutoExpandReduce = false, int maxWaitTimeMs = 1000);
     ThreadPool();
 
     ThreadPool(const ThreadPool& other) = delete;
@@ -48,36 +49,37 @@ public:
     int get_thread_pool_size();
     int get_current_tasks_size();
     int get_max_tasks_size() { return maxTasksSize_; }
-    void set_max_tasks_size(int size) { maxTasksSize_ = size; }
+    void set_max_tasks_size(int size) { assert(size > 0); maxTasksSize_ = size; }
     void enable_auto_expand_reduce() { openAutoExpandReduce_ = true; }
     void disable_auto_expand_reduce() { openAutoExpandReduce_ = false; }
     int get_max_wait_time_ms() { return maxWaitTime_; }
-    void set_max_wait_time_ms(int waitMs) { maxWaitTime_ = waitMs; }
+    void set_max_wait_time_ms(int waitMs) { assert(waitMs > 0); maxWaitTime_ = waitMs; }
 
 private:
     void initialize_worker_threads(int threadCount);
     void process_task();
     void expand_thread_pool();
     void reduce_thread_pool(std::thread::id threadId);
-    bool wait_not_full_or_stop(std::unique_lock<std::mutex>& lock);
     bool wait_not_empty_or_stop(std::unique_lock<std::mutex>& lock);
 
 private:
-    std::vector<std::thread> threads_;
-    std::priority_queue<Task> tasks_;
-    std::mutex tasksMutex_;
-    std::atomic<int> maxTasksSize_;
-    std::condition_variable notEmpty_;
-    std::condition_variable notFull_;
-    std::atomic<bool> stopFlag_;
-    std::atomic<bool> openAutoExpandReduce_;
-    std::atomic<int> maxWaitTime_;
-    std::mutex threadsMutex_;
+    std::vector<std::thread> threads_;          // 线程池中的工作线程
+    std::priority_queue<Task> tasks_;           // 任务队列，优先级高的任务先执行
+    std::mutex tasksMutex_;                     // 保护任务队列的互斥锁
+    std::atomic<int> maxTasksSize_;             // 任务队列的最大容量
+    std::condition_variable notEmpty_;          // 任务队列非空的条件变量，工作线程在此等待新任务到来
+    std::condition_variable notFull_;           // 任务队列未满的条件变量，提交任务时在此等待队列有空间
+    std::atomic<bool> stopFlag_;                // 线程池停止标志，控制工作线程退出
+    std::atomic<bool> openAutoExpandReduce_;    // 是否启用自动扩缩容功能
+    std::atomic<int> maxWaitTime_;              // 等待条件变量的最长时间，单位毫秒
+    std::mutex threadsMutex_;                   // 保护线程池中线程列表的互斥锁（主要用于自动扩缩容时修改线程列表）
 };
+
 
 template<typename F, typename ...Args>
 auto ThreadPool::submit_task(F&& func, Args&& ...args)
 -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
+    // 默认优先级为 0
     auto res = this->submit_task(0, std::forward<F>(func), std::forward<Args>(args)...);
     return res;
 }
@@ -85,32 +87,44 @@ auto ThreadPool::submit_task(F&& func, Args&& ...args)
 template<typename F, typename... Args>
 auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
 -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
+
     using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
     auto taskPtr = std::make_shared<std::packaged_task<RetType()>>(
         std::bind(std::forward<F>(func), std::forward<Args>(args)...)
     );
     std::future<RetType> res = taskPtr->get_future();
 
-    while (true) {
+    bool taskSubmitted = false;
+    while (!taskSubmitted) {
         std::unique_lock<std::mutex> uniqueLock(tasksMutex_);
-        bool ready = this->wait_not_full_or_stop(uniqueLock);
+        auto pred = [this]() {
+            return stopFlag_.load() ||
+                (tasks_.size() < static_cast<size_t>(maxTasksSize_.load()));
+            };
+        bool ready = notFull_.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime_.load()), pred);
+
+        // full && not stop
         if (!ready) {
-            uniqueLock.unlock();
+            uniqueLock.unlock(); // 因此需要手动解锁后再处理后续逻辑（耗时）。
             if (openAutoExpandReduce_) {
                 expand_thread_pool();
             }
-            continue;
+            else std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 避免在未启用自动扩容时过于频繁地尝试提交任务导致 CPU 占用过高
+            continue; // 下一次循环时会再次尝试提交任务
         }
 
-        if (stopFlag_) {
+        // not full or stop
+        // stop
+        if (stopFlag_.load()) {
             throw std::runtime_error("submit_task on stopped ThreadPool!");
         }
+        // not full
         auto task = [taskPtr]() { (*taskPtr)(); };
         auto taskFunc = std::function<void()>(task);
         tasks_.push(Task(taskFunc, priority));
-        break;
+        notEmpty_.notify_one();
+        taskSubmitted = true;
     }
-    notEmpty_.notify_one();
     return res;
 }
 
