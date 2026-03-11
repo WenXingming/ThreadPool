@@ -31,47 +31,32 @@ sequenceDiagram
 
 ```
 
-**一个简单实用的线程池，使用方式及样例详见 UnitTest.cpp**。该线程池具有以下特性：
+**一个简单实用的线程池，使用示例详见 examples/example.cpp**，单元测试位于 test 目录。 该线程池具有以下特性：
 
-1. **使用简单便捷**。只需在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。
+1. **使用简单便捷**。只需在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。无参无返回值任务的提交示例：
+    ```C++
+        // ThreadPoolTest.cpp 中的测试示例：（见 test_no_argument_no_ret()）
+    int initialSize = 24;
+    wxm::ThreadPool pool(initialSize, 50, false, 1000);
+    try {
+        for (int i = 0; i < Task::taskNum; ++i) {
+            pool.submit_task(&TestTask::task_1);
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+    ```
 
-   ```C++
-   // UnitTest.cpp 中的测试示例：无参无返回值任务的提交（见 test_no_argument_no_ret()）
-   int initialSize = 24;
-   wxm::ThreadPool pool(initialSize, 50, false, 1000);
-   try {
-       for (int i = 0; i < Task::taskNum; ++i) {
-           pool.submit_task(&Task::task1);
-       }
-   }
-   catch (const std::exception& e) {
-       std::cerr << e.what() << std::endl;
-   }
-   
-   // UnitTest.cpp 中的示例：有参有返回值任务的提交以及结果的获取（见 test_have_argument_have_ret()）
-   int initialSize = 24;
-   wxm::ThreadPool pool(initialSize, 50, false, 1000);
-   try {
-       std::vector<std::future<int>> results;
-       for (int i = 0; i < Task::taskNum; ++i) {
-           std::future<int> res = pool.submit_task(&Task::task2, std::ref(Task::num)); // 异步获取结果
-           results.push_back(std::move(res));
-       }
-   
-       for (auto& future : results) {
-           future.wait(); // 异步等待结果
-       }
-   
-       std::cout << "Output the results: \n";
-       for (auto& future : results) {
-           std::cout << future.get() << ' ';
-       }
-       std::cout << '\n';
-   }
-   catch (const std::exception& e) {
-       std::cerr << e.what() << std::endl;
-   }
-   ```
+    带返回值任务的提交示例：
+    
+    ```C++
+    wxm::ThreadPool pool(3, 32, false, 1000);
+    std::future<int> result = pool.submit_task([](int left, int right) {
+        return left * right;
+    }, 6, 7);
+    std::cout << result.get() << std::endl;
+    ```
 
 2. **支持任何任务的异步执行和结果获取**。可执行任意类型的任务，并通过 `std::future` 异步获取任务返回值。
 
