@@ -145,16 +145,4 @@ void ThreadPool::reduce_thread_pool(std::thread::id threadId) {
     std::cout << "thread_pool auto reduce successful, now size is: " << threads_.size() << std::endl;
 }
 
-bool ThreadPool::wait_not_empty_or_stop(std::unique_lock<std::mutex>& lock) {
-    auto pred = [this]() {
-        return stopFlag_.load() ||
-            (!tasks_.empty());
-        };
-    return notEmpty_.wait_for(
-        lock,
-        std::chrono::milliseconds(maxWaitTime_.load()),
-        pred
-    );
-}
-
-}
+} // namespace wxm

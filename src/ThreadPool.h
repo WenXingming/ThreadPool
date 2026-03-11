@@ -2,9 +2,9 @@
 // ThreadPool - 线程池类声明
 // ============================================================================
 // 核心功能和接口：
-// 1. 提交普通任务和带优先级任务。
-// 2. 查询线程池大小、任务队列大小和相关配置。
-// 3. 提供自动扩缩容所需的控制接口。
+// 1. 提交普通任务（可有返回值）和带优先级任务。
+// 2. 提供自动扩缩容所需的控制接口。
+// 3. 查询线程池大小、任务队列大小和相关配置。
 // ============================================================================
 
 #pragma once
@@ -60,7 +60,6 @@ private:
     void process_task();
     void expand_thread_pool();
     void reduce_thread_pool(std::thread::id threadId);
-    bool wait_not_empty_or_stop(std::unique_lock<std::mutex>& lock);
 
 private:
     std::vector<std::thread> threads_;          // 线程池中的工作线程
@@ -79,8 +78,8 @@ private:
 template<typename F, typename ...Args>
 auto ThreadPool::submit_task(F&& func, Args&& ...args)
 -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
-    // 默认优先级为 0
-    auto res = this->submit_task(0, std::forward<F>(func), std::forward<Args>(args)...);
+
+    auto res = this->submit_task(0, std::forward<F>(func), std::forward<Args>(args)...); // 默认优先级为 0
     return res;
 }
 
@@ -101,11 +100,11 @@ auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
             return stopFlag_.load() ||
                 (tasks_.size() < static_cast<size_t>(maxTasksSize_.load()));
             };
-        bool ready = notFull_.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime_.load()), pred);
+        bool ready = notFull_.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime_.load()), pred); // 阻塞退出时获取锁
 
         // full && not stop
         if (!ready) {
-            uniqueLock.unlock(); // 因此需要手动解锁后再处理后续逻辑（耗时）。
+            uniqueLock.unlock(); // 需要手动解锁后再处理后续逻辑（耗时）。
             if (openAutoExpandReduce_) {
                 expand_thread_pool();
             }
@@ -128,4 +127,4 @@ auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
     return res;
 }
 
-}
+} // namespace wxm
