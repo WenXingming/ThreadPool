@@ -31,11 +31,10 @@ sequenceDiagram
 
 ```
 
-**一个简单实用的线程池，使用示例详见 examples/example.cpp**，单元测试位于 test 目录。 该线程池具有以下特性：
+一个简单实用的线程池，**使用示例详见 examples/example.cpp**，单元测试位于 test 目录。 该线程池具有以下特性：
 
 1. **使用简单便捷**。只需在需要的地方包含 `ThreadPool.h` 头文件即可。通过 `wxm::ThreadPool pool;`（可指定构造函数参数）创建线程池后，即可提交任务。无参无返回值任务的提交示例：
     ```C++
-        // ThreadPoolTest.cpp 中的测试示例：（见 test_no_argument_no_ret()）
     int initialSize = 24;
     wxm::ThreadPool pool(initialSize, 50, false, 1000);
     try {
@@ -49,7 +48,7 @@ sequenceDiagram
     ```
 
     带返回值任务的提交示例：
-    
+
     ```C++
     wxm::ThreadPool pool(3, 32, false, 1000);
     std::future<int> result = pool.submit_task([](int left, int right) {
@@ -74,4 +73,4 @@ sequenceDiagram
 
 5. **More features await coding**...
 
-**提示**：本代码使用了 C++11 特性。<ins>代码注释详尽、易于理解。如果对您有帮助，欢迎给予 Star 🤞🤞🤞，非常感谢！</ins>
+**Tips**：本代码使用了 C++11 特性。代码注释详尽、易于理解。如果对您有帮助，欢迎给予 Star 🤞🤞🤞，非常感谢！
