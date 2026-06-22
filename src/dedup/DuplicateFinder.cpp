@@ -50,13 +50,41 @@ int default_thread_count() {
     return hardwareThreads == 0 ? 2 : static_cast<int>(hardwareThreads);
 }
 
+DuplicateFinderConfig normalize_config(DuplicateFinderConfig config) {
+    if (config.threadCount <= 0) {
+        config.threadCount = default_thread_count();
+    }
+    if (config.queueCapacity <= 0) {
+        config.queueCapacity = config.threadCount * 4;
+    }
+    if (config.waitTimeoutMs <= 0) {
+        config.waitTimeoutMs = 1000;
+    }
+    return config;
+}
+
 } // namespace
+
+DuplicateFinderConfig::DuplicateFinderConfig()
+    : threadCount(default_thread_count()),
+      queueCapacity(threadCount * 4),
+      waitTimeoutMs(1000) {
+}
+
+DuplicateFinder::DuplicateFinder()
+    : config_() {
+}
+
+DuplicateFinder::DuplicateFinder(const DuplicateFinderConfig& config)
+    : config_(normalize_config(config)) {
+}
 
 DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) const {
     DuplicateReport report;
     report.scannedFiles = 0;
     report.hashedFiles = 0;
     report.errorCount = 0;
+    report.threadCount = config_.threadCount;
 
     const FileWalkResult walkResult = fileWalker_.collect_files(rootPath);
     report.scannedFiles = walkResult.files.size();
@@ -82,8 +110,7 @@ DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) co
         }
     }
 
-    const int threadCount = default_thread_count();
-    wxm::ThreadPool pool(threadCount, threadCount * 4, false, 1000);
+    wxm::ThreadPool pool(config_.threadCount, config_.queueCapacity, false, config_.waitTimeoutMs);
     std::vector<std::future<HashResult> > futures;
     futures.reserve(candidates.size());
 

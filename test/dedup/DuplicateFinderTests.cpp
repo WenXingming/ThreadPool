@@ -138,3 +138,23 @@ TEST(DuplicateFinderTest, HandlesManyDuplicateCandidates) {
 
     remove_file_tree(root, files);
 }
+
+TEST(DuplicateFinderTest, UsesConfiguredThreadCount) {
+    const std::string root = make_temp_dir();
+    const std::string first = root + "/a.txt";
+    const std::string second = root + "/b.txt";
+    write_file(first, "same");
+    write_file(second, "same");
+
+    DuplicateFinderConfig config;
+    config.threadCount = 1;
+    config.queueCapacity = 2;
+    const DuplicateFinder finder(config);
+    const DuplicateReport report = finder.find_duplicates(root);
+
+    EXPECT_EQ(report.threadCount, 1);
+    ASSERT_EQ(report.groups.size(), 1u);
+    EXPECT_EQ(report.groups[0].paths.size(), 2u);
+
+    remove_file_tree(root, std::vector<std::string>{ first, second });
+}
