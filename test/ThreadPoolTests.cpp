@@ -23,9 +23,27 @@ TEST(ThreadPoolTest, ConstructorNormalizesThreadCount) {
     EXPECT_GE(pool.get_thread_pool_size(), 1);
 }
 
+TEST(ThreadPoolTest, ConstructorRejectsInvalidMaxTasksSize) {
+    EXPECT_THROW(wxm::ThreadPool pool(1, 0, false, 1000), std::invalid_argument);
+}
+
+TEST(ThreadPoolTest, ConstructorRejectsInvalidMaxWaitTime) {
+    EXPECT_THROW(wxm::ThreadPool pool(1, 16, false, 0), std::invalid_argument);
+}
+
 TEST(ThreadPoolTest, DefaultConstructorCreatesOneWorker) {
     wxm::ThreadPool pool;
     EXPECT_GE(pool.get_thread_pool_size(), 1);
+}
+
+TEST(ThreadPoolTest, SetMaxTasksSizeRejectsInvalidValue) {
+    wxm::ThreadPool pool;
+    EXPECT_THROW(pool.set_max_tasks_size(0), std::invalid_argument);
+}
+
+TEST(ThreadPoolTest, SetMaxWaitTimeRejectsInvalidValue) {
+    wxm::ThreadPool pool;
+    EXPECT_THROW(pool.set_max_wait_time_ms(0), std::invalid_argument);
 }
 
 TEST(ThreadPoolTest, SubmitTaskReturnsExpectedValue) {
@@ -182,6 +200,75 @@ TEST(ThreadPoolTest, AutoReduceRetiresShrunkWorker) {
     ASSERT_EQ(blocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     ASSERT_EQ(queuedTask.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(queuedTaskRuns.load(), 1);
+}
+
+TEST(ThreadPoolTest, AutoExpandAddsWorkerWhenQueueIsFull) {
+    wxm::ThreadPool pool(1, 1, true, 10);
+
+    std::promise<void> firstBlockerStarted;
+    std::future<void> firstBlockerStartedFuture = firstBlockerStarted.get_future();
+
+    std::promise<void> releaseFirstBlocker;
+    std::shared_future<void> firstBlockerFuture(releaseFirstBlocker.get_future());
+
+    std::promise<void> secondBlockerStarted;
+    std::future<void> secondBlockerStartedFuture = secondBlockerStarted.get_future();
+
+    std::promise<void> releaseSecondBlocker;
+    std::shared_future<void> secondBlockerFuture(releaseSecondBlocker.get_future());
+
+    std::promise<void> producerStarted;
+    std::future<void> producerStartedFuture = producerStarted.get_future();
+
+    std::promise<void> producerFinished;
+    std::future<void> producerFinishedFuture = producerFinished.get_future();
+
+    std::atomic<int> taskRuns(0);
+
+    auto firstBlocker = pool.submit_task([&]() {
+        firstBlockerStarted.set_value();
+        firstBlockerFuture.wait();
+        taskRuns.fetch_add(1);
+        });
+
+    ASSERT_EQ(firstBlockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    auto secondBlocker = pool.submit_task([&]() {
+        secondBlockerStarted.set_value();
+        secondBlockerFuture.wait();
+        taskRuns.fetch_add(1);
+        });
+
+    std::thread producer([&]() {
+        producerStarted.set_value();
+        auto thirdTask = pool.submit_task([&taskRuns]() {
+            taskRuns.fetch_add(1);
+            });
+        thirdTask.wait();
+        producerFinished.set_value();
+        });
+
+    ASSERT_EQ(producerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (pool.get_thread_pool_size() < 2 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_GE(pool.get_thread_pool_size(), 2);
+    ASSERT_EQ(secondBlockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    releaseFirstBlocker.set_value();
+    releaseSecondBlocker.set_value();
+
+    ASSERT_EQ(firstBlocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(secondBlocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(producerFinishedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    if (producer.joinable()) {
+        producer.join();
+    }
+
+    EXPECT_EQ(taskRuns.load(), 3);
 }
 
 TEST(ThreadPoolTest, HigherPriorityTaskRunsFirstAfterWorkerIsBlocked) {

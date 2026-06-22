@@ -21,7 +21,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <cassert>
 
 #include "Task.h"
 
@@ -48,11 +47,21 @@ public:
     int get_thread_pool_size();
     int get_current_tasks_size();
     int get_max_tasks_size() { return maxTasksSize_; }
-    void set_max_tasks_size(int size) { assert(size > 0); maxTasksSize_ = size; }
+    void set_max_tasks_size(int size) {
+        if (size <= 0) {
+            throw std::invalid_argument("maxTasksSize must be positive.");
+        }
+        maxTasksSize_ = size;
+    }
     void enable_auto_expand_reduce() { openAutoExpandReduce_ = true; }
     void disable_auto_expand_reduce() { openAutoExpandReduce_ = false; }
     int get_max_wait_time_ms() { return maxWaitTime_; }
-    void set_max_wait_time_ms(int waitMs) { assert(waitMs > 0); maxWaitTime_ = waitMs; }
+    void set_max_wait_time_ms(int waitMs) {
+        if (waitMs <= 0) {
+            throw std::invalid_argument("maxWaitTimeMs must be positive.");
+        }
+        maxWaitTime_ = waitMs;
+    }
 
 private:
     void initialize_worker_threads(int threadCount);

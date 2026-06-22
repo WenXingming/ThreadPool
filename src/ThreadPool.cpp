@@ -25,20 +25,21 @@ ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandRed
     , maxWaitTime_(maxWaitTimeMs)
     , threadsMutex_() {
 
-    assert(maxTasksSize > 0);
-    assert(maxWaitTimeMs > 0);
+    if (maxTasksSize <= 0) {
+        throw std::invalid_argument("maxTasksSize must be positive.");
+    }
+    if (maxWaitTimeMs <= 0) {
+        throw std::invalid_argument("maxWaitTimeMs must be positive.");
+    }
 
     int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
     if (threadCount < 1) {
         threadCount = 1;
-        std::cout << "threadCount set to 1 because input value is less than 1." << std::endl;
     }
     else if (threadCount > 2 * hardwareSize) {
         threadCount = 2 * hardwareSize;
-        std::cout << "threadCount set to 2 * hardwareSize because input value is too large." << std::endl;
     }
     initialize_worker_threads(threadCount);
-    std::cout << "thread pool is created success, size is: " << threads_.size() << std::endl;
 }
 
 ThreadPool::~ThreadPool() {
@@ -58,8 +59,6 @@ ThreadPool::~ThreadPool() {
         }
     }
     cleanup_finished_threads();
-    std::cout << "current thread pool size: " << threads_.size() << ", all threads joined." << std::endl;
-    std::cout << "thread pool is destructed success, and tasks are all finished." << std::endl;
 }
 
 int ThreadPool::get_thread_pool_size() {
@@ -122,20 +121,16 @@ void ThreadPool::expand_thread_pool() {
 
     int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
     if (threads_.size() >= static_cast<size_t>(2 * hardwareSize)) {
-        std::cout << "thread_pool is MAX_SIZE (2 * hardwareSize): " << threads_.size() << ", can't be expanded."
-            << " you'd better slow down the speed of submitting task.\n";
         return;
     }
     std::thread worker(&ThreadPool::process_task, this);
     threads_.push_back(std::move(worker));
-    std::cout << "thread_pool auto expand successful, now size is: " << threads_.size() << std::endl;
 }
 
 bool ThreadPool::reduce_thread_pool(std::thread::id threadId) {
     std::unique_lock<std::mutex> uniqueLock(threadsMutex_);
 
     if (threads_.size() <= 1) {
-        std::cout << "thread_pool is MIN_SIZE: " << threads_.size() << ", can't be reduced.\n";
         return false;
     }
 
@@ -147,13 +142,11 @@ bool ThreadPool::reduce_thread_pool(std::thread::id threadId) {
         }
     }
     if (removeIndex == -1) {
-        std::cout << "can't find the thread in thread_pool to reduce.\n";
         return false;
     }
 
     std::thread worker = std::move(threads_[removeIndex]);
     threads_.erase(threads_.begin() + removeIndex);
-    size_t currentSize = threads_.size();
     uniqueLock.unlock();
 
     {
@@ -161,7 +154,6 @@ bool ThreadPool::reduce_thread_pool(std::thread::id threadId) {
         finishedThreads_.push_back(std::move(worker));
     }
 
-    std::cout << "thread_pool auto reduce successful, now size is: " << currentSize << std::endl;
     return true;
 }
 
