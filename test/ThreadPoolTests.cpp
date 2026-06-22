@@ -23,6 +23,11 @@ TEST(ThreadPoolTest, ConstructorNormalizesThreadCount) {
     EXPECT_GE(pool.get_thread_pool_size(), 1);
 }
 
+TEST(ThreadPoolTest, DefaultConstructorCreatesOneWorker) {
+    wxm::ThreadPool pool;
+    EXPECT_GE(pool.get_thread_pool_size(), 1);
+}
+
 TEST(ThreadPoolTest, SubmitTaskReturnsExpectedValue) {
     wxm::ThreadPool pool(2, 16, false, 1000);
     std::future<int> result = pool.submit_task([](int a, int b) {

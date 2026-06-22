@@ -39,9 +39,6 @@ ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandRed
     std::cout << "thread pool is created success, size is: " << threads_.size() << std::endl;
 }
 
-ThreadPool::ThreadPool() : ThreadPool(1, 100, false, 1000) {
-}
-
 ThreadPool::~ThreadPool() {
     stopFlag_ = true;
     notEmpty_.notify_all();

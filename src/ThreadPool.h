@@ -30,7 +30,6 @@ namespace wxm {
 class ThreadPool {
 public:
     ThreadPool(int threadCount = 1, int maxTasksSize = 50, bool openAutoExpandReduce = false, int maxWaitTimeMs = 1000);
-    ThreadPool();
 
     ThreadPool(const ThreadPool& other) = delete;
     ThreadPool& operator=(const ThreadPool& other) = delete;
