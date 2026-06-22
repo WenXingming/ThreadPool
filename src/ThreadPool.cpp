@@ -13,18 +13,18 @@ namespace wxm {
 
 ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandReduce, int maxWaitTimeMs)
     : threads_()
+    , threadsMutex_()
     , finishedThreads_()
+    , finishedMutex_()
     , tasks_()
     , tasksMutex_()
-    , finishedMutex_()
     , maxTasksSize_(maxTasksSize)
     , notEmpty_()
     , notFull_()
     , stopFlag_(false)
     , openAutoExpandReduce_(openAutoExpandReduce)
     , maxWaitTime_(maxWaitTimeMs)
-    , nextSequenceId_(0)
-    , threadsMutex_() {
+    , nextTaskId_(0) {
 
     if (maxTasksSize <= 0) {
         throw std::invalid_argument("maxTasksSize must be positive.");
