@@ -146,6 +146,44 @@ TEST(ThreadPoolTest, DestructorWakesProducerWaitingForQueueSpace) {
     }
 }
 
+TEST(ThreadPoolTest, AutoReduceRetiresShrunkWorker) {
+    wxm::ThreadPool pool(2, 16, true, 10);
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (pool.get_thread_pool_size() > 1 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(pool.get_thread_pool_size(), 1);
+
+    std::promise<void> blockerStarted;
+    std::future<void> blockerStartedFuture = blockerStarted.get_future();
+
+    std::promise<void> releaseBlocker;
+    std::shared_future<void> blockerFuture(releaseBlocker.get_future());
+
+    std::atomic<int> queuedTaskRuns(0);
+
+    auto blocker = pool.submit_task([&]() {
+        blockerStarted.set_value();
+        blockerFuture.wait();
+        });
+
+    ASSERT_EQ(blockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    auto queuedTask = pool.submit_task([&queuedTaskRuns]() {
+        queuedTaskRuns.fetch_add(1);
+        });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(queuedTaskRuns.load(), 0);
+
+    releaseBlocker.set_value();
+
+    ASSERT_EQ(blocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(queuedTask.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(queuedTaskRuns.load(), 1);
+}
+
 TEST(ThreadPoolTest, HigherPriorityTaskRunsFirstAfterWorkerIsBlocked) {
     wxm::ThreadPool pool(1, 16, false, 1000);
 
