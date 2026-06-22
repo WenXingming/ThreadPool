@@ -44,46 +44,39 @@ public:
     auto submit_task(int priority, F&& func, Args&&... args)
         -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))>;
 
-    int get_thread_pool_size();
-    int get_current_tasks_size();
-    int get_max_tasks_size() { return maxTasksSize_; }
-    void set_max_tasks_size(int size) {
-        if (size <= 0) {
-            throw std::invalid_argument("maxTasksSize must be positive.");
-        }
-        maxTasksSize_ = size;
-    }
-    void enable_auto_expand_reduce() { openAutoExpandReduce_ = true; }
-    void disable_auto_expand_reduce() { openAutoExpandReduce_ = false; }
-    int get_max_wait_time_ms() { return maxWaitTime_; }
-    void set_max_wait_time_ms(int waitMs) {
-        if (waitMs <= 0) {
-            throw std::invalid_argument("maxWaitTimeMs must be positive.");
-        }
-        maxWaitTime_ = waitMs;
-    }
+    int get_pool_size();
+    int get_queue_size();
+    int get_queue_capacity();
+    void set_queue_capacity(int size);
+    void enable_auto_scaling();
+    void disable_auto_scaling();
+    int get_wait_timeout_ms();
+    void set_wait_timeout_ms(int waitMs);
 
 private:
-    void initialize_worker_threads(int threadCount);
     void process_task();
-    void expand_thread_pool();
-    bool reduce_thread_pool(std::thread::id threadId);
-    void cleanup_finished_threads();
+    void scale_up();
+    bool scale_down(std::thread::id threadId);
+    void join_exited_worker_threads();
 
 private:
-    std::vector<std::thread> threads_;          // 线程池中的工作线程
-    std::mutex threadsMutex_;                   // 保护线程池中线程列表的互斥锁（主要用于自动扩缩容时修改线程列表）
-    std::vector<std::thread> finishedThreads_;  // 已缩容退出、等待 join 清理的工作线程
-    std::mutex finishedMutex_;                  // 保护待清理线程列表的互斥锁
-    std::priority_queue<Task> tasks_;           // 任务队列，优先级高的任务先执行
-    std::mutex tasksMutex_;                     // 保护任务队列的互斥锁
-    std::atomic<int> maxTasksSize_;             // 任务队列的最大容量
-    std::condition_variable notEmpty_;          // 任务队列非空的条件变量，工作线程在此等待新任务到来
-    std::condition_variable notFull_;           // 任务队列未满的条件变量，提交任务时在此等待队列有空间
-    std::atomic<bool> stopFlag_;                // 线程池停止标志，控制工作线程退出
-    std::atomic<bool> openAutoExpandReduce_;    // 是否启用自动扩缩容功能
-    std::atomic<int> maxWaitTime_;              // 等待条件变量的最长时间，单位毫秒
-    std::atomic<uint64_t> nextTaskId_;          // 下一个任务入队序号，用于同优先级 FCFS
+    std::vector<std::thread> workerThreads_;            // 线程池中的工作线程
+    std::mutex workerThreadsMutex_;                     // 保护线程池中线程列表的互斥锁（主要用于自动扩缩容时修改线程列表）
+    std::vector<std::thread> exitedWorkerThreads_;      // 已缩容退出、等待 join 清理的工作线程
+    std::mutex exitedWorkerThreadsMutex_;               // 保护待清理线程列表的互斥锁
+
+    std::priority_queue<Task> taskQueue_;               // 任务队列，优先级高的任务先执行
+    std::mutex taskQueueMutex_;                         // 保护任务队列的互斥锁
+    std::atomic<int> taskQueueCapacity_;                // 任务队列的最大容量
+    std::atomic<uint64_t> nextTaskSequenceId_;          // 下一个任务入队序号，用于同优先级 FCFS
+
+    std::condition_variable notEmptyCv_;                // 任务队列非空的条件变量，工作线程在此等待新任务到来
+    std::condition_variable notFullCv_;                 // 任务队列未满的条件变量，提交任务时在此等待队列有空间
+
+    std::atomic<bool> autoScalingEnabled_;              // 是否启用自动扩缩容功能
+    std::atomic<int> waitTimeoutMs_;                    // 等待条件变量的最长时间，单位毫秒
+
+    std::atomic<bool> stopFlag_;                        // 线程池停止标志，控制工作线程退出
 };
 
 
@@ -99,7 +92,7 @@ template<typename F, typename... Args>
 auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
 -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
 
-    cleanup_finished_threads();
+    join_exited_worker_threads();
 
     using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
     auto taskPtr = std::make_shared<std::packaged_task<RetType()>>(
@@ -109,18 +102,21 @@ auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
 
     bool taskSubmitted = false;
     while (!taskSubmitted) {
-        std::unique_lock<std::mutex> uniqueLock(tasksMutex_);
+        std::unique_lock<std::mutex> uniqueLock(taskQueueMutex_);
         auto pred = [this]() {
             return stopFlag_.load() ||
-                (tasks_.size() < static_cast<size_t>(maxTasksSize_.load()));
+                (taskQueue_.size() < static_cast<size_t>(taskQueueCapacity_.load()));
             };
-        bool ready = notFull_.wait_for(uniqueLock, std::chrono::milliseconds(maxWaitTime_.load()), pred); // 阻塞退出时获取锁
+        bool ready = notFullCv_.wait_for(uniqueLock, std::chrono::milliseconds(waitTimeoutMs_.load()), pred); // 阻塞退出时获取锁
 
         // full && not stop
         if (!ready) {
             uniqueLock.unlock(); // 需要手动解锁后再处理后续逻辑（耗时）。
-            if (openAutoExpandReduce_) {
-                expand_thread_pool();
+            if (stopFlag_.load()) {
+                throw std::runtime_error("submit_task on stopped ThreadPool!");
+            }
+            if (autoScalingEnabled_) {
+                scale_up();
             }
             else std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 避免在未启用自动扩容时过于频繁地尝试提交任务导致 CPU 占用过高
             continue; // 下一次循环时会再次尝试提交任务
@@ -134,9 +130,9 @@ auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
         // not full
         auto task = [taskPtr]() { (*taskPtr)(); };
         auto taskFunc = std::function<void()>(task);
-        uint64_t sequenceId = nextTaskId_.fetch_add(1);
-        tasks_.push(Task(taskFunc, priority, sequenceId));
-        notEmpty_.notify_one();
+        uint64_t sequenceId = nextTaskSequenceId_.fetch_add(1);
+        taskQueue_.push(Task(taskFunc, priority, sequenceId));
+        notEmptyCv_.notify_one();
         taskSubmitted = true;
     }
     return res;

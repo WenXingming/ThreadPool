@@ -102,8 +102,8 @@ ThreadPool(int threadCount = 1,
 自动扩缩容也可以通过接口控制：
 
 ```cpp
-pool.enable_auto_expand_reduce();
-pool.disable_auto_expand_reduce();
+pool.enable_auto_scaling();
+pool.disable_auto_scaling();
 ```
 
 >[!NOTE]
@@ -117,8 +117,8 @@ pool.disable_auto_expand_reduce();
 
 ```cpp
 wxm::ThreadPool pool(1, 16, false, 1000);
-pool.set_max_tasks_size(64);
-pool.set_max_wait_time_ms(500);
+pool.set_queue_capacity(64);
+pool.set_wait_timeout_ms(500);
 ```
 
 ## 测试覆盖

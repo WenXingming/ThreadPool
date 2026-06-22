@@ -20,46 +20,46 @@
 
 TEST(ThreadPoolTest, ConstructorNormalizesThreadCount) {
     wxm::ThreadPool pool(0, 16, false, 1000);
-    EXPECT_GE(pool.get_thread_pool_size(), 1);
+    EXPECT_GE(pool.get_pool_size(), 1);
 }
 
 TEST(ThreadPoolTest, ConstructorRejectsInvalidMaxTasksSize) {
     EXPECT_THROW(wxm::ThreadPool pool(1, 0, false, 1000), std::invalid_argument);
 }
 
-TEST(ThreadPoolTest, ConstructorRejectsInvalidMaxWaitTime) {
+TEST(ThreadPoolTest, ConstructorRejectsInvalidWaitTimeout) {
     EXPECT_THROW(wxm::ThreadPool pool(1, 16, false, 0), std::invalid_argument);
 }
 
 TEST(ThreadPoolTest, DefaultConstructorCreatesOneWorker) {
     wxm::ThreadPool pool;
-    EXPECT_GE(pool.get_thread_pool_size(), 1);
+    EXPECT_GE(pool.get_pool_size(), 1);
 }
 
-TEST(ThreadPoolTest, SetMaxTasksSizeRejectsInvalidValue) {
+TEST(ThreadPoolTest, SetQueueCapacityRejectsInvalidValue) {
     wxm::ThreadPool pool;
-    EXPECT_THROW(pool.set_max_tasks_size(0), std::invalid_argument);
+    EXPECT_THROW(pool.set_queue_capacity(0), std::invalid_argument);
 }
 
-TEST(ThreadPoolTest, SetMaxTasksSizeUpdatesLimit) {
+TEST(ThreadPoolTest, SetQueueCapacityUpdatesLimit) {
     wxm::ThreadPool pool;
 
-    pool.set_max_tasks_size(8);
+    pool.set_queue_capacity(8);
 
-    EXPECT_EQ(pool.get_max_tasks_size(), 8);
+    EXPECT_EQ(pool.get_queue_capacity(), 8);
 }
 
-TEST(ThreadPoolTest, SetMaxWaitTimeRejectsInvalidValue) {
+TEST(ThreadPoolTest, SetWaitTimeoutRejectsInvalidValue) {
     wxm::ThreadPool pool;
-    EXPECT_THROW(pool.set_max_wait_time_ms(0), std::invalid_argument);
+    EXPECT_THROW(pool.set_wait_timeout_ms(0), std::invalid_argument);
 }
 
-TEST(ThreadPoolTest, SetMaxWaitTimeUpdatesLimit) {
+TEST(ThreadPoolTest, SetWaitTimeoutUpdatesLimit) {
     wxm::ThreadPool pool;
 
-    pool.set_max_wait_time_ms(250);
+    pool.set_wait_timeout_ms(250);
 
-    EXPECT_EQ(pool.get_max_wait_time_ms(), 250);
+    EXPECT_EQ(pool.get_wait_timeout_ms(), 250);
 }
 
 TEST(ThreadPoolTest, SubmitTaskReturnsExpectedValue) {
@@ -212,20 +212,20 @@ TEST(ThreadPoolTest, CurrentTasksSizeCountsQueuedTasks) {
         });
 
     ASSERT_EQ(blockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
-    EXPECT_EQ(pool.get_current_tasks_size(), 0);
+    EXPECT_EQ(pool.get_queue_size(), 0);
 
     auto firstQueuedTask = pool.submit_task([]() {});
-    EXPECT_EQ(pool.get_current_tasks_size(), 1);
+    EXPECT_EQ(pool.get_queue_size(), 1);
 
     auto secondQueuedTask = pool.submit_task([]() {});
-    EXPECT_EQ(pool.get_current_tasks_size(), 2);
+    EXPECT_EQ(pool.get_queue_size(), 2);
 
     releaseBlocker.set_value();
 
     ASSERT_EQ(blocker.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     ASSERT_EQ(firstQueuedTask.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     ASSERT_EQ(secondQueuedTask.wait_for(std::chrono::seconds(1)), std::future_status::ready);
-    EXPECT_EQ(pool.get_current_tasks_size(), 0);
+    EXPECT_EQ(pool.get_queue_size(), 0);
 }
 
 TEST(ThreadPoolTest, DestructorFinishesQueuedTasks) {
@@ -323,10 +323,10 @@ TEST(ThreadPoolTest, AutoReduceRetiresShrunkWorker) {
     wxm::ThreadPool pool(2, 16, true, 10);
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-    while (pool.get_thread_pool_size() > 1 && std::chrono::steady_clock::now() < deadline) {
+    while (pool.get_pool_size() > 1 && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    ASSERT_EQ(pool.get_thread_pool_size(), 1);
+    ASSERT_EQ(pool.get_pool_size(), 1);
 
     std::promise<void> blockerStarted;
     std::future<void> blockerStartedFuture = blockerStarted.get_future();
@@ -406,10 +406,10 @@ TEST(ThreadPoolTest, AutoExpandAddsWorkerWhenQueueIsFull) {
     ASSERT_EQ(producerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-    while (pool.get_thread_pool_size() < 2 && std::chrono::steady_clock::now() < deadline) {
+    while (pool.get_pool_size() < 2 && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_GE(pool.get_thread_pool_size(), 2);
+    EXPECT_GE(pool.get_pool_size(), 2);
     ASSERT_EQ(secondBlockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     releaseFirstBlocker.set_value();
@@ -426,7 +426,7 @@ TEST(ThreadPoolTest, AutoExpandAddsWorkerWhenQueueIsFull) {
     EXPECT_EQ(taskRuns.load(), 3);
 }
 
-TEST(ThreadPoolTest, EnableAutoExpandReduceControlsExpansion) {
+TEST(ThreadPoolTest, EnableAutoScalingControlsExpansion) {
     wxm::ThreadPool pool(1, 1, false, 50);
 
     std::promise<void> firstBlockerStarted;
@@ -475,16 +475,16 @@ TEST(ThreadPoolTest, EnableAutoExpandReduceControlsExpansion) {
     ASSERT_EQ(producerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     std::this_thread::sleep_for(std::chrono::milliseconds(120));
 
-    EXPECT_EQ(pool.get_thread_pool_size(), 1);
+    EXPECT_EQ(pool.get_pool_size(), 1);
     EXPECT_EQ(producerFinishedFuture.wait_for(std::chrono::milliseconds(1)), std::future_status::timeout);
 
-    pool.enable_auto_expand_reduce();
+    pool.enable_auto_scaling();
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-    while (pool.get_thread_pool_size() < 2 && std::chrono::steady_clock::now() < deadline) {
+    while (pool.get_pool_size() < 2 && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_GE(pool.get_thread_pool_size(), 2);
+    EXPECT_GE(pool.get_pool_size(), 2);
     ASSERT_EQ(secondBlockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
 
     releaseFirstBlocker.set_value();
@@ -501,9 +501,9 @@ TEST(ThreadPoolTest, EnableAutoExpandReduceControlsExpansion) {
     EXPECT_EQ(taskRuns.load(), 3);
 }
 
-TEST(ThreadPoolTest, DisableAutoExpandReducePreventsExpansion) {
+TEST(ThreadPoolTest, DisableAutoScalingPreventsExpansion) {
     wxm::ThreadPool pool(1, 1, true, 50);
-    pool.disable_auto_expand_reduce();
+    pool.disable_auto_scaling();
 
     std::promise<void> blockerStarted;
     std::future<void> blockerStartedFuture = blockerStarted.get_future();
@@ -536,7 +536,7 @@ TEST(ThreadPoolTest, DisableAutoExpandReducePreventsExpansion) {
     ASSERT_EQ(submitStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     std::this_thread::sleep_for(std::chrono::milliseconds(120));
 
-    EXPECT_EQ(pool.get_thread_pool_size(), 1);
+    EXPECT_EQ(pool.get_pool_size(), 1);
     EXPECT_EQ(submitFinishedFuture.wait_for(std::chrono::milliseconds(1)), std::future_status::timeout);
 
     releaseBlocker.set_value();
