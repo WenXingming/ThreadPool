@@ -49,6 +49,38 @@ TEST(ThreadPoolTest, AllSubmittedTasksAreExecuted) {
     EXPECT_EQ(counter.load(), 50);
 }
 
+TEST(ThreadPoolTest, DestructorFinishesQueuedTasks) {
+    std::atomic<int> counter(0);
+
+    std::promise<void> blockerStarted;
+    std::future<void> blockerStartedFuture = blockerStarted.get_future();
+
+    std::promise<void> releaseBlocker;
+    std::shared_future<void> blockerFuture(releaseBlocker.get_future());
+
+    {
+        wxm::ThreadPool pool(1, 16, false, 1000);
+
+        pool.submit_task([&]() {
+            blockerStarted.set_value();
+            blockerFuture.wait();
+            counter.fetch_add(1);
+            });
+
+        ASSERT_EQ(blockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+        for (int i = 0; i < 5; ++i) {
+            pool.submit_task([&counter]() {
+                counter.fetch_add(1);
+                });
+        }
+
+        releaseBlocker.set_value();
+    }
+
+    EXPECT_EQ(counter.load(), 6);
+}
+
 TEST(ThreadPoolTest, HigherPriorityTaskRunsFirstAfterWorkerIsBlocked) {
     wxm::ThreadPool pool(1, 16, false, 1000);
 

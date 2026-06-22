@@ -45,6 +45,7 @@ ThreadPool::ThreadPool() : ThreadPool(1, 100, false, 1000) {
 ThreadPool::~ThreadPool() {
     stopFlag_ = true;
     notEmpty_.notify_all();
+    notFull_.notify_all();
     for (auto& thread : threads_) {
         if (thread.joinable()) {
             thread.join();
@@ -91,7 +92,7 @@ void ThreadPool::process_task() {
         }
 
         // stop || not empty
-        if (stopFlag_.load()) {
+        if (stopFlag_.load() && tasks_.empty()) {
             break;
         }
         task = std::move(tasks_.top());
