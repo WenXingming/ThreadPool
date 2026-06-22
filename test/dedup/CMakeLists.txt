@@ -18,6 +18,7 @@ target_include_directories(dedupTests PRIVATE
 )
 
 target_link_libraries(dedupTests PRIVATE
+    ThreadPool
     GTest::gtest_main
 )
 

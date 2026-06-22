@@ -1,8 +1,11 @@
 #include "DuplicateFinder.h"
+#include "ThreadPool.h"
 
 #include <algorithm>
+#include <future>
 #include <map>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 namespace {
@@ -42,6 +45,11 @@ void sort_report(DuplicateReport& report) {
     std::sort(report.errors.begin(), report.errors.end());
 }
 
+int default_thread_count() {
+    const unsigned int hardwareThreads = std::thread::hardware_concurrency();
+    return hardwareThreads == 0 ? 2 : static_cast<int>(hardwareThreads);
+}
+
 } // namespace
 
 DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) const {
@@ -62,23 +70,40 @@ DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) co
         filesBySize[it->size].push_back(*it);
     }
 
-    std::map<SizeHashKey, std::vector<std::string> > filesBySizeAndHash;
+    std::vector<FileInfo> candidates;
     for (std::map<uint64_t, std::vector<FileInfo> >::const_iterator groupIt = filesBySize.begin(); groupIt != filesBySize.end(); ++groupIt) {
         const std::vector<FileInfo>& files = groupIt->second;
-        if (files.size() < 2) {
+        if (files.size() < 2) { // 性能优化：大小唯一的文件不可能是重复的，直接跳过，避免计算哈希
             continue;
         }
 
         for (std::vector<FileInfo>::const_iterator fileIt = files.begin(); fileIt != files.end(); ++fileIt) {
-            const HashResult hashResult = hasher_.hash_file(*fileIt);
-            if (!hashResult.ok) {
-                report.errors.push_back(format_hash_error(hashResult));
-                continue;
-            }
-
-            ++report.hashedFiles;
-            filesBySizeAndHash[SizeHashKey(fileIt->size, hashResult.hash)].push_back(fileIt->path);
+            candidates.push_back(*fileIt);
         }
+    }
+
+    const int threadCount = default_thread_count();
+    wxm::ThreadPool pool(threadCount, threadCount * 4, false, 1000);
+    std::vector<std::future<HashResult> > futures;
+    futures.reserve(candidates.size());
+
+    for (std::vector<FileInfo>::const_iterator it = candidates.begin(); it != candidates.end(); ++it) {
+        const FileInfo file = *it;
+        futures.push_back(pool.submit_task([this, file]() {
+            return hasher_.hash_file(file);
+            }));
+    }
+
+    std::map<SizeHashKey, std::vector<std::string> > filesBySizeAndHash;
+    for (std::vector<std::future<HashResult> >::iterator it = futures.begin(); it != futures.end(); ++it) {
+        const HashResult hashResult = it->get();
+        if (!hashResult.ok) {
+            report.errors.push_back(format_hash_error(hashResult));
+            continue;
+        }
+
+        ++report.hashedFiles;
+        filesBySizeAndHash[SizeHashKey(hashResult.file.size, hashResult.hash)].push_back(hashResult.file.path);
     }
 
     for (std::map<SizeHashKey, std::vector<std::string> >::const_iterator it = filesBySizeAndHash.begin(); it != filesBySizeAndHash.end(); ++it) {

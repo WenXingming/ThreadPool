@@ -112,3 +112,29 @@ TEST(DuplicateFinderTest, ReportsScannedAndHashedCounts) {
 
     remove_file_tree(root, std::vector<std::string>{ first, second, third });
 }
+
+TEST(DuplicateFinderTest, HandlesManyDuplicateCandidates) {
+    const std::string root = make_temp_dir();
+    std::vector<std::string> files;
+
+    for (int i = 0; i < 10; ++i) {
+        const std::string path = root + "/same_" + std::to_string(i) + ".txt";
+        write_file(path, "same-content");
+        files.push_back(path);
+    }
+
+    for (int i = 0; i < 10; ++i) {
+        const std::string path = root + "/unique_" + std::to_string(i) + ".txt";
+        write_file(path, "unique-" + std::to_string(i));
+        files.push_back(path);
+    }
+
+    const DuplicateFinder finder;
+    const DuplicateReport report = finder.find_duplicates(root);
+
+    ASSERT_EQ(report.groups.size(), 1u);
+    EXPECT_EQ(report.groups[0].paths.size(), 10u);
+    EXPECT_EQ(report.hashedFiles, 20u);
+
+    remove_file_tree(root, files);
+}
