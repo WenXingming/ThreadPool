@@ -9,6 +9,7 @@ file(GLOB_RECURSE DEDUP_TEST_SOURCES CONFIGURE_DEPENDS
 add_executable(dedupTests
     ${DEDUP_TEST_SOURCES}
     ${PROJECT_SOURCE_DIR}/src/dedup/FileWalker.cpp
+    ${PROJECT_SOURCE_DIR}/src/dedup/Hasher.cpp
 )
 
 target_include_directories(dedupTests PRIVATE
