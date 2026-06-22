@@ -15,12 +15,15 @@ FetchContent_MakeAvailable(googletest)
 file(GLOB_RECURSE THREAD_POOL_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
-add_executable(unitTests ${THREAD_POOL_TEST_SOURCES})
-target_link_libraries(unitTests PRIVATE 
+
+add_executable(threadPoolTests ${THREAD_POOL_TEST_SOURCES})
+
+target_link_libraries(threadPoolTests PRIVATE 
         ThreadPool 
         GTest::gtest_main
 )
 
 # 启用 CTest 测试框架，并自动发现和注册测试用例
 include(GoogleTest)
-gtest_discover_tests(unitTests)
+
+gtest_discover_tests(threadPoolTests)
