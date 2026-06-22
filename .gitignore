@@ -9,3 +9,6 @@ build/
 
 # codex
 .codex/
+
+# benchmark
+build-bench*/

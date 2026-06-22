@@ -14,6 +14,8 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(BUILD_BENCHMARKS "Build benchmark targets" OFF)
+
 include(CTest)
 
 add_subdirectory(src/threadpool)
@@ -22,4 +24,7 @@ add_subdirectory(examples)
 if(BUILD_TESTING)
     add_subdirectory(test/threadpool)
     add_subdirectory(test/dedup)
+endif()
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmark/dedup)
 endif()
