@@ -1,8 +1,19 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "FileInfo.h"
+
+struct WalkError {
+    std::string path;
+    std::string message;
+};
+
+struct FileWalkResult {
+    std::vector<FileInfo> files;
+    std::vector<WalkError> errors;
+};
 
 class FileWalker {
 public:

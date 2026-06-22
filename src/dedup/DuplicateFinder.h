@@ -28,6 +28,6 @@ public:
     DuplicateReport find_duplicates(const std::string& rootPath) const;
 
 private:
-    FileWalker fileWalker_;
+    FileWalker fileWalker_; // TODO: 注入依赖
     Hasher hasher_;
 };
