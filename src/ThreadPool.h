@@ -83,6 +83,7 @@ private:
     std::atomic<bool> stopFlag_;                // 线程池停止标志，控制工作线程退出
     std::atomic<bool> openAutoExpandReduce_;    // 是否启用自动扩缩容功能
     std::atomic<int> maxWaitTime_;              // 等待条件变量的最长时间，单位毫秒
+    std::atomic<uint64_t> nextSequenceId_;       // 下一个任务入队序号，用于同优先级 FCFS
 };
 
 
@@ -133,7 +134,8 @@ auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
         // not full
         auto task = [taskPtr]() { (*taskPtr)(); };
         auto taskFunc = std::function<void()>(task);
-        tasks_.push(Task(taskFunc, priority));
+        uint64_t sequenceId = nextSequenceId_.fetch_add(1);
+        tasks_.push(Task(taskFunc, priority, sequenceId));
         notEmpty_.notify_one();
         taskSubmitted = true;
     }

@@ -55,6 +55,31 @@ TEST(ThreadPoolTest, SubmitTaskReturnsExpectedValue) {
     EXPECT_EQ(result.get(), 42);
 }
 
+TEST(ThreadPoolTest, TaskExceptionPropagatesThroughFuture) {
+    wxm::ThreadPool pool(2, 16, false, 1000);
+
+    std::future<void> result = pool.submit_task([]() {
+        throw std::runtime_error("task failed");
+        });
+
+    EXPECT_THROW(result.get(), std::runtime_error);
+}
+
+TEST(ThreadPoolTest, WorkerContinuesAfterTaskException) {
+    wxm::ThreadPool pool(1, 16, false, 1000);
+
+    std::future<void> failedTask = pool.submit_task([]() {
+        throw std::runtime_error("task failed");
+        });
+
+    std::future<int> nextTask = pool.submit_task([]() {
+        return 42;
+        });
+
+    EXPECT_THROW(failedTask.get(), std::runtime_error);
+    EXPECT_EQ(nextTask.get(), 42);
+}
+
 TEST(ThreadPoolTest, AllSubmittedTasksAreExecuted) {
     wxm::ThreadPool pool(4, 128, false, 1000);
     std::atomic<int> counter(0);
@@ -336,8 +361,6 @@ TEST(ThreadPoolTest, SamePriorityUsesFifoAfterWorkerIsBlocked) {
         std::lock_guard<std::mutex> lock(orderMutex);
         executionOrder.push_back(1);
         });
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
     auto second = pool.submit_task(10, [&executionOrder, &orderMutex]() {
         std::lock_guard<std::mutex> lock(orderMutex);

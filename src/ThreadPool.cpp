@@ -23,6 +23,7 @@ ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandRed
     , stopFlag_(false)
     , openAutoExpandReduce_(openAutoExpandReduce)
     , maxWaitTime_(maxWaitTimeMs)
+    , nextSequenceId_(0)
     , threadsMutex_() {
 
     if (maxTasksSize <= 0) {

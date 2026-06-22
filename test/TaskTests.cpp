@@ -10,10 +10,8 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <queue>
 #include <stdexcept>
-#include <thread>
 #include <vector>
 
 TEST(TaskTest, DefaultTaskUsesSentinelPriority) {
@@ -45,10 +43,10 @@ TEST(TaskTest, PriorityQueuePopsHigherPriorityFirst) {
 
     taskQueue.push(wxm::Task([&executionOrder]() {
         executionOrder.push_back(1);
-        }, 1));
+        }, 1, 0));
     taskQueue.push(wxm::Task([&executionOrder]() {
         executionOrder.push_back(10);
-        }, 10));
+        }, 10, 1));
 
     while (!taskQueue.empty()) {
         wxm::Task task = taskQueue.top();
@@ -67,11 +65,10 @@ TEST(TaskTest, PriorityQueueUsesFifoWhenPriorityMatches) {
 
     taskQueue.push(wxm::Task([&executionOrder]() {
         executionOrder.push_back(1);
-        }, 5));
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }, 5, 0));
     taskQueue.push(wxm::Task([&executionOrder]() {
         executionOrder.push_back(2);
-        }, 5));
+        }, 5, 1));
 
     while (!taskQueue.empty()) {
         wxm::Task task = taskQueue.top();
