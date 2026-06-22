@@ -1,5 +1,11 @@
+# vscode settings
 .vscode/
+
+# build artifacts
 build/
 
 # skills
 .agents/
+
+# codex
+.codex/

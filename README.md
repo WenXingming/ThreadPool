@@ -32,7 +32,7 @@ sequenceDiagram
 
 ```
 
-使用示例详见 [examples/example.cpp](examples/example.cpp)，单元测试位于 [test](test) 目录。
+使用示例详见 [examples/](examples/)，单元测试位于 [test](test) 目录。
 
 ## 快速使用
 
