@@ -14,6 +14,7 @@
 #include <chrono>
 #include <future>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -79,6 +80,65 @@ TEST(ThreadPoolTest, DestructorFinishesQueuedTasks) {
     }
 
     EXPECT_EQ(counter.load(), 6);
+}
+
+TEST(ThreadPoolTest, DestructorWakesProducerWaitingForQueueSpace) {
+    std::atomic<bool> submitThrew(false);
+
+    std::promise<void> blockerStarted;
+    std::future<void> blockerStartedFuture = blockerStarted.get_future();
+
+    std::promise<void> releaseBlocker;
+    std::shared_future<void> blockerFuture(releaseBlocker.get_future());
+
+    std::promise<void> producerStarted;
+    std::future<void> producerStartedFuture = producerStarted.get_future();
+
+    std::promise<void> producerFinished;
+    std::future<void> producerFinishedFuture = producerFinished.get_future();
+
+    std::unique_ptr<wxm::ThreadPool> pool(new wxm::ThreadPool(1, 1, false, 5000));
+    wxm::ThreadPool* poolRaw = pool.get();
+
+    pool->submit_task([&]() {
+        blockerStarted.set_value();
+        blockerFuture.wait();
+        });
+
+    ASSERT_EQ(blockerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    pool->submit_task([]() {});
+
+    std::thread producer([&]() {
+        producerStarted.set_value();
+        try {
+            poolRaw->submit_task([]() {});
+        }
+        catch (const std::runtime_error&) {
+            submitThrew.store(true);
+        }
+        producerFinished.set_value();
+        });
+
+    ASSERT_EQ(producerStartedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    std::thread destructorThread([&]() {
+        pool.reset();
+        });
+
+    EXPECT_EQ(producerFinishedFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_TRUE(submitThrew.load());
+
+    if (producer.joinable()) {
+        producer.join();
+    }
+
+    releaseBlocker.set_value();
+
+    if (destructorThread.joinable()) {
+        destructorThread.join();
+    }
 }
 
 TEST(ThreadPoolTest, HigherPriorityTaskRunsFirstAfterWorkerIsBlocked) {
