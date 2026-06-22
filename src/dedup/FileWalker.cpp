@@ -57,15 +57,17 @@ void FileWalker::collect_files_recursive(const std::string& path, FileWalkResult
         return;
     }
 
-    DIR* dir = opendir(path.c_str());
-    if (dir == nullptr) {
+
+
+    ScopedDir dir(opendir(path.c_str()));
+    if (!dir) {
         result.errors.push_back(WalkError{ path, errno_message("opendir failed") });
         return;
     }
 
     while (true) {
         errno = 0;
-        dirent* entry = readdir(dir); // 每次调用会返回目录下的一个文件或子文件夹信息。
+        dirent* entry = readdir(dir.get()); // 每次调用会返回目录下的一个文件或子文件夹信息。
         if (entry == nullptr) {
             // 返回 nullptr 有两种情况。一是目录读完了（此时  errno  仍为 0），二是读取中途出错（此时  errno  会被设为非 0）。因此在读取前重置  errno = 0 ，可以用来区分这两种情况。
             if (errno != 0) {
@@ -81,6 +83,4 @@ void FileWalker::collect_files_recursive(const std::string& path, FileWalkResult
 
         collect_files_recursive(join_path(path, name), result);
     }
-
-    closedir(dir);
 }
