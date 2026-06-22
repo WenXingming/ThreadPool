@@ -23,7 +23,7 @@ TEST(ThreadPoolTest, ConstructorNormalizesThreadCount) {
     EXPECT_GE(pool.get_pool_size(), 1);
 }
 
-TEST(ThreadPoolTest, ConstructorRejectsInvalidMaxTasksSize) {
+TEST(ThreadPoolTest, ConstructorRejectsInvalidQueueCapacity) {
     EXPECT_THROW(wxm::ThreadPool pool(1, 0, false, 1000), std::invalid_argument);
 }
 

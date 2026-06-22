@@ -8,26 +8,31 @@
 // ============================================================================
 
 #include "ThreadPool.h"
+#include <algorithm>
 
 namespace wxm {
 
-ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandReduce, int maxWaitTimeMs)
+ThreadPool::ThreadPool(int threadCount, int queueCapacity, bool autoScalingEnabled, int waitTimeoutMs)
     : workerThreads_()
     , workerThreadsMutex_()
     , exitedWorkerThreads_()
     , exitedWorkerThreadsMutex_()
     , taskQueue_()
     , taskQueueMutex_()
-    , taskQueueCapacity_(maxTasksSize)
+    , taskQueueCapacity_(queueCapacity)
     , nextTaskSequenceId_(0)
     , notEmptyCv_()
     , notFullCv_()
-    , autoScalingEnabled_(openAutoExpandReduce)
-    , waitTimeoutMs_(maxWaitTimeMs)
+    , autoScalingEnabled_(autoScalingEnabled)
+    , waitTimeoutMs_(waitTimeoutMs)
     , stopFlag_(false) {
 
-    if (maxTasksSize <= 0) throw std::invalid_argument("maxTasksSize must be positive.");
-    if (maxWaitTimeMs <= 0) throw std::invalid_argument("maxWaitTimeMs must be positive.");
+    if (queueCapacity <= 0) {
+        throw std::invalid_argument("queueCapacity must be positive.");
+    }
+    if (waitTimeoutMs <= 0) {
+        throw std::invalid_argument("waitTimeoutMs must be positive.");
+    }
 
     int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
     if (threadCount < 1) {
@@ -38,8 +43,6 @@ ThreadPool::ThreadPool(int threadCount, int maxTasksSize, bool openAutoExpandRed
     }
 
     for (int i = 0; i < threadCount; ++i) {
-        // std::thread worker(&ThreadPool::process_task, this);
-        // workerThreads_.push_back(std::move(worker));
         workerThreads_.emplace_back(&ThreadPool::process_task, this);
     }
 }
@@ -60,12 +63,10 @@ ThreadPool::~ThreadPool() {
             thread.join();
         }
     }
-    join_exited_worker_threads();
+    cleanup_exited_worker_threads();
 }
 
 int ThreadPool::get_pool_size() {
-    join_exited_worker_threads();
-
     std::lock_guard<std::mutex> guardLock(workerThreadsMutex_);
     return static_cast<int>(workerThreads_.size());
 }
@@ -81,7 +82,7 @@ int ThreadPool::get_queue_capacity() {
 
 void ThreadPool::set_queue_capacity(int size) {
     if (size <= 0) {
-        throw std::invalid_argument("maxTasksSize must be positive.");
+        throw std::invalid_argument("queueCapacity must be positive.");
     }
     taskQueueCapacity_ = size;
 }
@@ -100,7 +101,7 @@ int ThreadPool::get_wait_timeout_ms() {
 
 void ThreadPool::set_wait_timeout_ms(int waitMs) {
     if (waitMs <= 0) {
-        throw std::invalid_argument("maxWaitTimeMs must be positive.");
+        throw std::invalid_argument("waitTimeoutMs must be positive.");
     }
     waitTimeoutMs_ = waitMs;
 }
@@ -108,81 +109,84 @@ void ThreadPool::set_wait_timeout_ms(int waitMs) {
 void ThreadPool::process_task() {
     while (true) {
         Task task;
-        std::unique_lock<std::mutex> uniqueLock(taskQueueMutex_);
-        auto pred = [this]() {
-            return stopFlag_.load() || (!taskQueue_.empty());
-            };
-        bool ready = notEmptyCv_.wait_for(uniqueLock, std::chrono::milliseconds(waitTimeoutMs_.load()), pred);
+        {
+            std::unique_lock<std::mutex> uniqueLock(taskQueueMutex_);
+            bool ready = notEmptyCv_.wait_for(uniqueLock, std::chrono::milliseconds(waitTimeoutMs_.load()), [this]() {
+                return stopFlag_.load() || (!taskQueue_.empty());
+                });
 
-        // empty && not stop
-        if (!ready) {
-            uniqueLock.unlock(); // 提前解锁，因为后续逻辑可能较耗时
-            if (autoScalingEnabled_) {
-                if (scale_down(std::this_thread::get_id())) {
+            // not stop && empty
+            if (!ready) {
+                uniqueLock.unlock(); // 提前解锁，因为后续逻辑可能较耗时
+
+                if (!autoScalingEnabled_) { // 未启用自动缩容时让出 CPU，避免频繁无效轮询
+                    std::this_thread::yield();
+                    continue;
+                }
+
+                if (scale_down(std::this_thread::get_id())) { // 开了就尝试缩容；缩容成功则退出当前线程
                     break;
                 }
-            }
-            else std::this_thread::yield(); // 普通模式或未启用自动缩容时让出 CPU，避免频繁无效轮询
-            continue; // 下一次循环继续取任务执行
-        }
 
-        // stop || not empty
-        if (stopFlag_.load() && taskQueue_.empty()) {
-            break;
+                std::this_thread::yield(); // 缩容未成功
+                continue;
+            }
+
+            // stop || not empty
+            if (stopFlag_.load() && taskQueue_.empty()) {
+                break;
+            }
+            task = taskQueue_.top();
+            taskQueue_.pop();
         }
-        task = std::move(taskQueue_.top());
-        taskQueue_.pop();
-        uniqueLock.unlock(); // 提前解锁，因为后续执行任务可能较耗时
 
         notFullCv_.notify_one();
-        task.run();
+        task.run(); // 提前解锁，因为后续执行任务可能较耗时
     }
 }
 
 void ThreadPool::scale_up() {
-    join_exited_worker_threads();
+    cleanup_exited_worker_threads();
 
     std::unique_lock<std::mutex> uniqueLock(workerThreadsMutex_);
 
-    int hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
-    if (workerThreads_.size() >= static_cast<size_t>(2 * hardwareSize)) {
+    size_t hardwareSize = std::thread::hardware_concurrency() == 0 ? 2 : std::thread::hardware_concurrency();
+    size_t maxWorkerThreadSize = 2 * hardwareSize;
+    if (workerThreads_.size() >= maxWorkerThreadSize) {
         return;
     }
-    std::thread worker(&ThreadPool::process_task, this);
-    workerThreads_.push_back(std::move(worker));
+    workerThreads_.emplace_back(&ThreadPool::process_task, this);
 }
 
 bool ThreadPool::scale_down(std::thread::id threadId) {
-    std::unique_lock<std::mutex> uniqueLock(workerThreadsMutex_);
-
-    if (workerThreads_.size() <= 1) {
-        return false;
-    }
-
-    int removeIndex = -1;
-    for (size_t i = 0; i < workerThreads_.size(); ++i) {
-        if (workerThreads_[i].get_id() == threadId) {
-            removeIndex = static_cast<int>(i);
-            break;
+    std::thread removeThread;
+    {
+        std::unique_lock<std::mutex> uniqueLock(workerThreadsMutex_);
+        if (workerThreads_.size() <= 1) {
+            return false;
         }
-    }
-    if (removeIndex == -1) {
-        return false;
-    }
 
-    std::thread worker = std::move(workerThreads_[removeIndex]);
-    workerThreads_.erase(workerThreads_.begin() + removeIndex);
-    uniqueLock.unlock();
+        auto removeThreadIt = std::find_if(workerThreads_.begin(), workerThreads_.end(),
+            [threadId](const std::thread& workerThread) {
+                return workerThread.get_id() == threadId;
+            }
+        );
 
+        if (removeThreadIt == workerThreads_.end()) {
+            return false;
+        }
+        removeThread = std::move(*removeThreadIt);
+        workerThreads_.erase(removeThreadIt);
+    }
     {
         std::lock_guard<std::mutex> guardLock(exitedWorkerThreadsMutex_);
-        exitedWorkerThreads_.push_back(std::move(worker));
+        exitedWorkerThreads_.push_back(std::move(removeThread));
     }
 
     return true;
 }
 
-void ThreadPool::join_exited_worker_threads() {
+void ThreadPool::cleanup_exited_worker_threads() {
     std::vector<std::thread> threadsToJoin;
     {
         std::lock_guard<std::mutex> guardLock(exitedWorkerThreadsMutex_);
@@ -191,17 +195,20 @@ void ThreadPool::join_exited_worker_threads() {
 
     std::vector<std::thread> deferredThreads;
     for (auto& thread : threadsToJoin) {
-        if (!thread.joinable()) {
-            continue;
-        }
         if (thread.get_id() == std::this_thread::get_id()) {
             deferredThreads.push_back(std::move(thread));
+            continue;
+        }
+        if (!thread.joinable()) {
             continue;
         }
         thread.join();
     }
 
-    if (!deferredThreads.empty()) {
+    if (deferredThreads.empty()) {
+        return;
+    }
+    {
         std::lock_guard<std::mutex> guardLock(exitedWorkerThreadsMutex_);
         for (auto& thread : deferredThreads) {
             exitedWorkerThreads_.push_back(std::move(thread));

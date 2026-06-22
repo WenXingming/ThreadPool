@@ -3,7 +3,6 @@
 一个基于 C++11 实现的通用线程池组件，支持有界任务队列、异步任务提交、`std::future` 结果获取、优先级调度和可选自动扩缩容。
 
 ```mermaid
-
 %%{init: {
     "theme": "default",
     "themeVariables": {
@@ -86,15 +85,15 @@ failed.get(); // throws std::runtime_error
 
 ```cpp
 ThreadPool(int threadCount = 1,
-           int maxTasksSize = 50,
-           bool openAutoExpandReduce = false,
-           int maxWaitTimeMs = 1000);
+           int queueCapacity = 50,
+           bool autoScalingEnabled = false,
+           int waitTimeoutMs = 1000);
 ```
 
-当 `openAutoExpandReduce` 为 `true` 时：
+当 `autoScalingEnabled` 为 `true` 时：
 
-- 如果任务队列已满，提交线程等待超过 `maxWaitTimeMs` 后，线程池会尝试扩容。
-- 如果 worker 在 `maxWaitTimeMs` 内没有等到任务，线程池会尝试缩容。
+- 如果任务队列已满，提交线程等待超过 `waitTimeoutMs` 后，线程池会尝试扩容。
+- 如果 worker 在 `waitTimeoutMs` 内没有等到任务，线程池会尝试缩容。
 - 线程池最小保留 `1` 个 worker。
 - 线程池最大扩展到 `2 * std::thread::hardware_concurrency()`。
 - 缩容线程会自然退出并被安全 `join`，不会使用 `detach()`。
@@ -107,19 +106,7 @@ pool.disable_auto_scaling();
 ```
 
 >[!NOTE]
-**理论上期望处理速率 $\mathrm{ Expect(v) \geq (1/\\_maxWaitTime) \times numOfThread }$（单位：任务/秒）**，其中 $\mathrm{numOfThread}$ 为**提交任务的并发线程数量**。
->- 若当前线程池无法达到该速率，其会自动扩容直到满足该速率或直至线程数量达到 2* 最大核心数。若扩容到 2* 最大核心数也达不到期望速率，此时属于硬件性能受限，线程池将维持在 2* 最大核心数。
->- 若当前线程池超过该速率，其会自动缩容直到满足该速率或直至线程数量达到 1。若缩容到 1 也超过期望速率，此时属于任务处理时间过短，线程池将维持在 1。
-
-## 参数校验
-
-`maxTasksSize` 和 `maxWaitTimeMs` 必须为正数，否则抛出 `std::invalid_argument`。
-
-```cpp
-wxm::ThreadPool pool(1, 16, false, 1000);
-pool.set_queue_capacity(64);
-pool.set_wait_timeout_ms(500);
-```
+`waitTimeoutMs` 同时影响扩容和缩容的触发敏感度：值越小，线程池越快响应队列满或 worker 空闲；值越大，线程池越稳定，但扩缩容响应更慢。
 
 ## 测试覆盖
 
@@ -135,13 +122,6 @@ pool.set_wait_timeout_ms(500);
 - 析构时唤醒阻塞提交线程；
 - 自动扩容、自动缩容以及开关控制；
 - 配置参数合法/非法路径。
-
-运行测试：
-
-```bash
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
 
 ## 说明
 

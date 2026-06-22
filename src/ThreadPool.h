@@ -28,7 +28,7 @@ namespace wxm {
 
 class ThreadPool {
 public:
-    ThreadPool(int threadCount = 1, int maxTasksSize = 50, bool openAutoExpandReduce = false, int maxWaitTimeMs = 1000);
+    ThreadPool(int threadCount = 1, int queueCapacity = 50, bool autoScalingEnabled = false, int waitTimeoutMs = 1000);
 
     ThreadPool(const ThreadPool& other) = delete;
     ThreadPool& operator=(const ThreadPool& other) = delete;
@@ -57,7 +57,7 @@ private:
     void process_task();
     void scale_up();
     bool scale_down(std::thread::id threadId);
-    void join_exited_worker_threads();
+    void cleanup_exited_worker_threads();
 
 private:
     std::vector<std::thread> workerThreads_;            // 线程池中的工作线程
@@ -88,11 +88,10 @@ auto ThreadPool::submit_task(F&& func, Args&& ...args)
     return res;
 }
 
+
 template<typename F, typename... Args>
 auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
 -> std::future<decltype(std::forward<F>(func)(std::forward<Args>(args)...))> {
-
-    join_exited_worker_threads();
 
     using RetType = decltype(std::forward<F>(func)(std::forward<Args>(args)...));
     auto taskPtr = std::make_shared<std::packaged_task<RetType()>>(
@@ -100,40 +99,40 @@ auto wxm::ThreadPool::submit_task(int priority, F&& func, Args&& ...args)
     );
     std::future<RetType> res = taskPtr->get_future();
 
-    bool taskSubmitted = false;
-    while (!taskSubmitted) {
-        std::unique_lock<std::mutex> uniqueLock(taskQueueMutex_);
-        auto pred = [this]() {
-            return stopFlag_.load() ||
-                (taskQueue_.size() < static_cast<size_t>(taskQueueCapacity_.load()));
-            };
-        bool ready = notFullCv_.wait_for(uniqueLock, std::chrono::milliseconds(waitTimeoutMs_.load()), pred); // 阻塞退出时获取锁
+    while (true) {
+        {
+            std::unique_lock<std::mutex> uniqueLock(taskQueueMutex_);
+            auto queueHasSpaceOrStopped = [this]() {
+                return taskQueue_.size() < static_cast<size_t>(taskQueueCapacity_.load()) ||
+                    stopFlag_.load();
+                };
+            bool ready = notFullCv_.wait_for(uniqueLock, std::chrono::milliseconds(waitTimeoutMs_.load()), queueHasSpaceOrStopped);
 
-        // full && not stop
-        if (!ready) {
-            uniqueLock.unlock(); // 需要手动解锁后再处理后续逻辑（耗时）。
+            // full && not stop
+            if (!ready) {
+                uniqueLock.unlock(); // 需要手动解锁后再处理后续逻辑（耗时）。
+                if (stopFlag_.load()) {
+                    throw std::runtime_error("submit_task on stopped ThreadPool!");
+                }
+
+                if (!autoScalingEnabled_) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 避免在未启用自动扩容时过于频繁地尝试提交任务导致 CPU 占用过高
+                    continue;
+                }
+                scale_up();
+                continue; // 下一次循环时会再次尝试提交任务
+            }
+
+            // not full or stop
             if (stopFlag_.load()) {
                 throw std::runtime_error("submit_task on stopped ThreadPool!");
             }
-            if (autoScalingEnabled_) {
-                scale_up();
-            }
-            else std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 避免在未启用自动扩容时过于频繁地尝试提交任务导致 CPU 占用过高
-            continue; // 下一次循环时会再次尝试提交任务
+            auto task = [taskPtr]() { (*taskPtr)(); };
+            uint64_t sequenceId = nextTaskSequenceId_.fetch_add(1);
+            taskQueue_.push(Task(sequenceId, priority, std::function<void()>(task)));
         }
-
-        // not full or stop
-        // stop
-        if (stopFlag_.load()) {
-            throw std::runtime_error("submit_task on stopped ThreadPool!");
-        }
-        // not full
-        auto task = [taskPtr]() { (*taskPtr)(); };
-        auto taskFunc = std::function<void()>(task);
-        uint64_t sequenceId = nextTaskSequenceId_.fetch_add(1);
-        taskQueue_.push(Task(taskFunc, priority, sequenceId));
         notEmptyCv_.notify_one();
-        taskSubmitted = true;
+        break;
     }
     return res;
 }

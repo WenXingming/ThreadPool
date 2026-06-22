@@ -22,9 +22,9 @@ TEST(TaskTest, DefaultTaskUsesSentinelPriority) {
 
 TEST(TaskTest, RunExecutesStoredCallable) {
     int counter = 0;
-    wxm::Task task([&counter]() {
+    wxm::Task task(0, 3, [&counter]() {
         ++counter;
-        }, 3);
+        });
 
     task.run();
 
@@ -41,12 +41,12 @@ TEST(TaskTest, PriorityQueuePopsHigherPriorityFirst) {
     std::vector<int> executionOrder;
     std::priority_queue<wxm::Task> taskQueue;
 
-    taskQueue.push(wxm::Task([&executionOrder]() {
+    taskQueue.push(wxm::Task(0, 1, [&executionOrder]() {
         executionOrder.push_back(1);
-        }, 1, 0));
-    taskQueue.push(wxm::Task([&executionOrder]() {
+        }));
+    taskQueue.push(wxm::Task(1, 10, [&executionOrder]() {
         executionOrder.push_back(10);
-        }, 10, 1));
+        }));
 
     while (!taskQueue.empty()) {
         wxm::Task task = taskQueue.top();
@@ -63,12 +63,12 @@ TEST(TaskTest, PriorityQueueUsesFifoWhenPriorityMatches) {
     std::vector<int> executionOrder;
     std::priority_queue<wxm::Task> taskQueue;
 
-    taskQueue.push(wxm::Task([&executionOrder]() {
+    taskQueue.push(wxm::Task(0, 5, [&executionOrder]() {
         executionOrder.push_back(1);
-        }, 5, 0));
-    taskQueue.push(wxm::Task([&executionOrder]() {
+        }));
+    taskQueue.push(wxm::Task(1, 5, [&executionOrder]() {
         executionOrder.push_back(2);
-        }, 5, 1));
+        }));
 
     while (!taskQueue.empty()) {
         wxm::Task task = taskQueue.top();
