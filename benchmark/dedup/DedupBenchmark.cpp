@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 
 #include "DuplicateFinder.h"
+#include "ThreadPool.h"
 
 #include <cstdio>
 #include <fstream>
@@ -78,10 +79,8 @@ void run_dedup_benchmark(benchmark::State& state) {
     std::string root;
     std::vector<std::string> files;
 
-    DuplicateFinderConfig config;
-    config.threadCount = threadCount;
-    config.queueCapacity = threadCount * 4;
-    const DuplicateFinder finder(config);
+    wxm::ThreadPool pool(threadCount, threadCount * 4, false, 1000);
+    const DuplicateFinder finder(pool);
 
     for (auto _ : state) {
         if (root.empty()) {

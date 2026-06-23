@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "DuplicateFinder.h"
+#include "ThreadPool.h"
+#include <thread>
 
 namespace {
 
@@ -36,13 +38,15 @@ bool parse_positive_int(const std::string& text, int& value) {
     return true;
 }
 
-bool parse_args(int argc, char* argv[], std::string& directory, DuplicateFinderConfig& config) {
+bool parse_args(int argc, char* argv[], std::string& directory, int& threadCount) {
     if (argc != 2 && argc != 4) {
         return false;
     }
 
     directory = argv[1];
     if (argc == 2) {
+        const unsigned int hardwareThreads = std::thread::hardware_concurrency();
+        threadCount = hardwareThreads == 0 ? 2 : static_cast<int>(hardwareThreads);
         return true;
     }
 
@@ -50,17 +54,14 @@ bool parse_args(int argc, char* argv[], std::string& directory, DuplicateFinderC
         return false;
     }
 
-    int threadCount = 0;
     if (!parse_positive_int(argv[3], threadCount) || threadCount > INT_MAX / 4) {
         return false;
     }
 
-    config.threadCount = threadCount;
-    config.queueCapacity = threadCount * 4;
     return true;
 }
 
-void print_report(const DuplicateReport& report) {
+void print_report(const DuplicateReport& report, int threadCount) {
     if (report.groups.empty()) {
         std::cout << "No duplicate files found.\n\n";
     }
@@ -81,14 +82,15 @@ void print_report(const DuplicateReport& report) {
     std::cout << "Summary:\n";
     std::cout << "  scanned files: " << report.scannedFiles << "\n";
     std::cout << "  hashed files: " << report.hashedFiles << "\n";
-    std::cout << "  threads: " << report.threadCount << "\n";
+    std::cout << "  threads: " << threadCount << "\n";
     std::cout << "  duplicate groups: " << report.groups.size() << "\n";
-    std::cout << "  errors: " << report.errorCount << "\n";
+    std::cout << "  errors: " << report.errors.size() << "\n";
 
     if (!report.errors.empty()) {
         std::cout << "\nErrors:\n";
-        for (std::vector<std::string>::const_iterator it = report.errors.begin(); it != report.errors.end(); ++it) {
-            std::cout << "  " << *it << "\n";
+        for (std::vector<FileError>::const_iterator it = report.errors.begin(); it != report.errors.end(); ++it) {
+            std::cout << "  [" << (it->phase == FileError::Phase::SCAN ? "SCAN" : "HASH") << "] " 
+                      << it->path << ": " << it->message << "\n";
         }
     }
 }
@@ -97,13 +99,14 @@ void print_report(const DuplicateReport& report) {
 
 int main(int argc, char* argv[]) {
     std::string directory;
-    DuplicateFinderConfig config;
-    if (!parse_args(argc, argv, directory, config)) {
+    int threadCount = 0;
+    if (!parse_args(argc, argv, directory, threadCount)) {
         return print_usage(argv[0]);
     }
 
-    const DuplicateFinder finder(config);
+    wxm::ThreadPool pool(threadCount, threadCount * 4, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(directory);
-    print_report(report);
+    print_report(report, threadCount);
     return 0;
 }

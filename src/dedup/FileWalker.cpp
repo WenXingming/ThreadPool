@@ -4,7 +4,6 @@
 #include <cerrno>
 #include <cstring>
 #include <dirent.h>
-#include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -17,32 +16,32 @@ std::string join_path(const std::string& parent, const std::string& child) {
     return parent + "/" + child;
 }
 
-std::string errno_message(const std::string& prefix) {
-    std::ostringstream oss;
-    oss << prefix << ": " << std::strerror(errno);
-    return oss.str();
-}
-
 } // namespace
 
 FileWalkResult FileWalker::collect_files(const std::string& rootPath) const {
     FileWalkResult result;
-    collect_files_recursive(rootPath, result);
+
+    collect_files_recursive(result, rootPath);
 
     std::sort(result.files.begin(), result.files.end(), [](const FileInfo& left, const FileInfo& right) {
         return left.path < right.path;
         });
-    std::sort(result.errors.begin(), result.errors.end(), [](const WalkError& left, const WalkError& right) {
+    std::sort(result.errors.begin(), result.errors.end(), [](const FileError& left, const FileError& right) {
         return left.path < right.path;
         });
 
     return result;
 }
 
-void FileWalker::collect_files_recursive(const std::string& path, FileWalkResult& result) const {
+void FileWalker::collect_files_recursive(FileWalkResult& result, const std::string& path) const {
     struct stat status;
     if (lstat(path.c_str(), &status) != 0) {
-        result.errors.push_back(WalkError{ path, errno_message("lstat failed") });
+        result.errors.push_back(FileError{ FileError::Phase::SCAN, path, std::string("lstat failed: ") + std::strerror(errno) });
+        return;
+    }
+
+    // 既不是普通文件，也不是目录（那它可能是软链接、管道文件、设备文件等）。直接忽略
+    if (!S_ISREG(status.st_mode) && !S_ISDIR(status.st_mode)) {
         return;
     }
 
@@ -52,26 +51,20 @@ void FileWalker::collect_files_recursive(const std::string& path, FileWalkResult
         return;
     }
 
-    // 既不是普通文件，也不是目录（那它可能是软链接、管道文件、设备文件等）。直接忽略
-    if (!S_ISDIR(status.st_mode)) {
-        return;
-    }
-
-
-
+    // 处理目录
     ScopedDir dir(opendir(path.c_str()));
     if (!dir) {
-        result.errors.push_back(WalkError{ path, errno_message("opendir failed") });
+        result.errors.push_back(FileError{ FileError::Phase::SCAN, path, std::string("opendir failed: ") + std::strerror(errno) });
         return;
     }
 
     while (true) {
         errno = 0;
         dirent* entry = readdir(dir.get()); // 每次调用会返回目录下的一个文件或子文件夹信息。
-        if (entry == nullptr) {
-            // 返回 nullptr 有两种情况。一是目录读完了（此时  errno  仍为 0），二是读取中途出错（此时  errno  会被设为非 0）。因此在读取前重置  errno = 0 ，可以用来区分这两种情况。
+        if (entry == nullptr) { // 返回 nullptr 有两种情况。一是目录读完了（此时 errno 仍为 0），二是读取中途出错（此时 errno 会被设为非 0）。因此在读取前重置  errno = 0 ，可以用来区分这两种情况。
             if (errno != 0) {
-                result.errors.push_back(WalkError{ path, errno_message("readdir failed") });
+                result.errors.push_back(FileError{ FileError::Phase::SCAN, path, std::string("readdir failed: ") + std::strerror(errno) });
+                continue;
             }
             break;
         }
@@ -81,6 +74,6 @@ void FileWalker::collect_files_recursive(const std::string& path, FileWalkResult
             continue;
         }
 
-        collect_files_recursive(join_path(path, name), result);
+        collect_files_recursive(result, join_path(path, name));
     }
 }

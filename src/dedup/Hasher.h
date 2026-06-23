@@ -10,7 +10,7 @@ struct HashResult {
     bool ok;
     FileInfo file;
     uint64_t hash;
-    std::string error;
+    FileError error;
 };
 
 class Hasher {

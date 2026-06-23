@@ -3,28 +3,108 @@
 
 #include <algorithm>
 #include <future>
-#include <map>
-#include <sstream>
-#include <thread>
-#include <utility>
 
-namespace {
-
-typedef std::pair<uint64_t, uint64_t> SizeHashKey;
-
-std::string format_walk_error(const WalkError& error) {
-    std::ostringstream oss;
-    oss << error.path << ": " << error.message;
-    return oss.str();
+DuplicateFinder::DuplicateFinder(wxm::ThreadPool& pool)
+    : pool_(pool) {
 }
 
-std::string format_hash_error(const HashResult& result) {
-    std::ostringstream oss;
-    oss << result.file.path << ": " << result.error;
-    return oss.str();
+DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) const {
+    const FileWalkResult walkResult = fileWalker_.collect_files(rootPath);
+    const std::map<uint64_t, std::vector<FileInfo> > filesBySize = group_files_by_size(walkResult.files);
+    const std::vector<FileInfo> candidates = collect_hash_candidates(filesBySize);
+    const std::vector<HashResult> hashResults = hash_candidates(candidates);
+    const std::map<std::pair<uint64_t, uint64_t>, std::vector<std::string> > buckets = group_by_hash_and_size(hashResults);
+    const std::vector<DuplicateGroup> duplicateGroups = extract_duplicate_groups(buckets);
+
+    return assemble_report(walkResult, hashResults, duplicateGroups);
 }
 
-void sort_report(DuplicateReport& report) {
+std::map<uint64_t, std::vector<FileInfo> > DuplicateFinder::group_files_by_size(const std::vector<FileInfo>& files) const {
+    std::map<uint64_t, std::vector<FileInfo> > filesBySize;
+    for (std::vector<FileInfo>::const_iterator it = files.begin(); it != files.end(); ++it) {
+        filesBySize[it->size].push_back(*it);
+    }
+    return filesBySize;
+}
+
+std::vector<FileInfo> DuplicateFinder::collect_hash_candidates(const std::map<uint64_t, std::vector<FileInfo> >& filesBySize) const {
+    std::vector<FileInfo> candidates;
+    for (std::map<uint64_t, std::vector<FileInfo> >::const_iterator groupIt = filesBySize.begin(); groupIt != filesBySize.end(); ++groupIt) {
+        const std::vector<FileInfo>& files = groupIt->second;
+        if (files.size() < 2) { // 性能优化：大小唯一的文件不可能是重复的，直接跳过，避免计算哈希
+            continue;
+        }
+
+        for (std::vector<FileInfo>::const_iterator fileIt = files.begin(); fileIt != files.end(); ++fileIt) {
+            candidates.push_back(*fileIt);
+        }
+    }
+    return candidates;
+}
+
+std::vector<HashResult> DuplicateFinder::hash_candidates(const std::vector<FileInfo>& candidates) const {
+    std::vector<std::future<HashResult> > futures;
+    futures.reserve(candidates.size());
+
+    for (std::vector<FileInfo>::const_iterator it = candidates.begin(); it != candidates.end(); ++it) {
+        const FileInfo file = *it;
+        futures.push_back(pool_.submit_task([this, file]() {
+            return hasher_.hash_file(file);
+            }));
+    }
+
+    std::vector<HashResult> results;
+    results.reserve(futures.size());
+    for (std::vector<std::future<HashResult> >::iterator it = futures.begin(); it != futures.end(); ++it) {
+        results.push_back(it->get());
+    }
+    return results;
+}
+
+std::map<std::pair<uint64_t, uint64_t>, std::vector<std::string> > DuplicateFinder::group_by_hash_and_size(const std::vector<HashResult>& results) const {
+    std::map<std::pair<uint64_t, uint64_t>, std::vector<std::string> > filesBySignature;
+    for (std::vector<HashResult>::const_iterator it = results.begin(); it != results.end(); ++it) {
+        if (!it->ok) {
+            continue;
+        }
+
+        filesBySignature[std::make_pair(it->file.size, it->hash)].push_back(it->file.path);
+    }
+
+    return filesBySignature;
+}
+
+std::vector<DuplicateGroup> DuplicateFinder::extract_duplicate_groups(const std::map<std::pair<uint64_t, uint64_t>, std::vector<std::string> >& buckets) const {
+    std::vector<DuplicateGroup> duplicateGroups;
+    for (std::map<std::pair<uint64_t, uint64_t>, std::vector<std::string> >::const_iterator it = buckets.begin(); it != buckets.end(); ++it) {
+        if (it->second.size() < 2) {
+            continue;
+        }
+
+        DuplicateGroup group;
+        group.size = it->first.first;
+        group.hash = it->first.second;
+        group.paths = it->second;
+        duplicateGroups.push_back(group);
+    }
+    return duplicateGroups;
+}
+
+DuplicateReport DuplicateFinder::assemble_report(const FileWalkResult& walkResult, const std::vector<HashResult>& hashResults, const std::vector<DuplicateGroup>& duplicateGroups) const {
+    DuplicateReport report;
+    report.scannedFiles = walkResult.files.size();
+    report.errors.insert(report.errors.end(), walkResult.errors.begin(), walkResult.errors.end());
+
+    for (std::vector<HashResult>::const_iterator it = hashResults.begin(); it != hashResults.end(); ++it) {
+        if (!it->ok) {
+            report.errors.push_back(it->error);
+        } else {
+            ++report.hashedFiles;
+        }
+    }
+
+    report.groups = duplicateGroups;
+
     for (std::vector<DuplicateGroup>::iterator it = report.groups.begin(); it != report.groups.end(); ++it) {
         std::sort(it->paths.begin(), it->paths.end());
     }
@@ -42,110 +122,12 @@ void sort_report(DuplicateReport& report) {
         return left.paths[0] < right.paths[0];
         });
 
-    std::sort(report.errors.begin(), report.errors.end());
-}
-
-int default_thread_count() {
-    const unsigned int hardwareThreads = std::thread::hardware_concurrency();
-    return hardwareThreads == 0 ? 2 : static_cast<int>(hardwareThreads);
-}
-
-DuplicateFinderConfig normalize_config(DuplicateFinderConfig config) {
-    if (config.threadCount <= 0) {
-        config.threadCount = default_thread_count();
-    }
-    if (config.queueCapacity <= 0) {
-        config.queueCapacity = config.threadCount * 4;
-    }
-    if (config.waitTimeoutMs <= 0) {
-        config.waitTimeoutMs = 1000;
-    }
-    return config;
-}
-
-} // namespace
-
-DuplicateFinderConfig::DuplicateFinderConfig()
-    : threadCount(default_thread_count()),
-      queueCapacity(threadCount * 4),
-      waitTimeoutMs(1000) {
-}
-
-DuplicateFinder::DuplicateFinder()
-    : config_() {
-}
-
-DuplicateFinder::DuplicateFinder(const DuplicateFinderConfig& config)
-    : config_(normalize_config(config)) {
-}
-
-DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) const {
-    DuplicateReport report;
-    report.scannedFiles = 0;
-    report.hashedFiles = 0;
-    report.errorCount = 0;
-    report.threadCount = config_.threadCount;
-
-    const FileWalkResult walkResult = fileWalker_.collect_files(rootPath);
-    report.scannedFiles = walkResult.files.size();
-
-    for (std::vector<WalkError>::const_iterator it = walkResult.errors.begin(); it != walkResult.errors.end(); ++it) {
-        report.errors.push_back(format_walk_error(*it));
-    }
-
-    std::map<uint64_t, std::vector<FileInfo> > filesBySize;
-    for (std::vector<FileInfo>::const_iterator it = walkResult.files.begin(); it != walkResult.files.end(); ++it) {
-        filesBySize[it->size].push_back(*it);
-    }
-
-    std::vector<FileInfo> candidates;
-    for (std::map<uint64_t, std::vector<FileInfo> >::const_iterator groupIt = filesBySize.begin(); groupIt != filesBySize.end(); ++groupIt) {
-        const std::vector<FileInfo>& files = groupIt->second;
-        if (files.size() < 2) { // 性能优化：大小唯一的文件不可能是重复的，直接跳过，避免计算哈希
-            continue;
+    std::sort(report.errors.begin(), report.errors.end(), [](const FileError& left, const FileError& right) {
+        if (left.phase != right.phase) {
+            return left.phase < right.phase;
         }
+        return left.path < right.path;
+        });
 
-        for (std::vector<FileInfo>::const_iterator fileIt = files.begin(); fileIt != files.end(); ++fileIt) {
-            candidates.push_back(*fileIt);
-        }
-    }
-
-    wxm::ThreadPool pool(config_.threadCount, config_.queueCapacity, false, config_.waitTimeoutMs);
-    std::vector<std::future<HashResult> > futures;
-    futures.reserve(candidates.size());
-
-    for (std::vector<FileInfo>::const_iterator it = candidates.begin(); it != candidates.end(); ++it) {
-        const FileInfo file = *it;
-        futures.push_back(pool.submit_task([this, file]() {
-            return hasher_.hash_file(file);
-            }));
-    }
-
-    std::map<SizeHashKey, std::vector<std::string> > filesBySizeAndHash;
-    for (std::vector<std::future<HashResult> >::iterator it = futures.begin(); it != futures.end(); ++it) {
-        const HashResult hashResult = it->get();
-        if (!hashResult.ok) {
-            report.errors.push_back(format_hash_error(hashResult));
-            continue;
-        }
-
-        ++report.hashedFiles;
-        filesBySizeAndHash[SizeHashKey(hashResult.file.size, hashResult.hash)].push_back(hashResult.file.path);
-    }
-
-    for (std::map<SizeHashKey, std::vector<std::string> >::const_iterator it = filesBySizeAndHash.begin(); it != filesBySizeAndHash.end(); ++it) {
-        if (it->second.size() < 2) {
-            continue;
-        }
-
-        DuplicateGroup group;
-        group.size = it->first.first;
-        group.hash = it->first.second;
-        group.paths = it->second;
-        report.groups.push_back(group);
-    }
-
-    report.errorCount = report.errors.size();
-    sort_report(report);
     return report;
 }

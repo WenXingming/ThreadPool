@@ -16,7 +16,7 @@ HashResult Hasher::hash_file(const FileInfo& file) const {
     // 1. 以二进制模式打开文件 (非常重要，防止 Windows 下的 \r\n 转换破坏文件数据)
     std::ifstream input(file.path.c_str(), std::ios::binary);
     if (!input.is_open()) {
-        return HashResult{ false, file, 0, std::string("failed to open file.") };
+        return HashResult{ false, file, 0, FileError{ FileError::Phase::HASH, file.path, "failed to open file." } };
     }
 
     // 2. 分配读取缓冲区，分块循环读取 (Chunked Reading)
@@ -34,8 +34,8 @@ HashResult Hasher::hash_file(const FileInfo& file) const {
     // 3. 严谨的错误校验
     // 循环退出时，正常情况必须是因为遇到了文件尾 (EOF)，如果不是 EOF 导致的退出，说明发生了 I/O 错误（如磁盘掉线）
     if (!input.eof()) {
-        return HashResult{ false, file, 0, std::string("failed to read file.") };
+        return HashResult{ false, file, 0, FileError{ FileError::Phase::HASH, file.path, "failed to read file." } };
     }
 
-    return HashResult{ true, file, hash.value(), "" };
+    return HashResult{ true, file, hash.value(), FileError{} };
 }

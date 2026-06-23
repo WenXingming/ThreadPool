@@ -1,4 +1,5 @@
 #include "DuplicateFinder.h"
+#include "ThreadPool.h"
 
 #include <gtest/gtest.h>
 
@@ -48,7 +49,8 @@ TEST(DuplicateFinderTest, FindsDuplicateFilesByContent) {
     write_file(second, "same");
     write_file(third, "different");
 
-    const DuplicateFinder finder;
+    wxm::ThreadPool pool(2, 8, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(root);
 
     ASSERT_EQ(report.groups.size(), 1u);
@@ -67,7 +69,8 @@ TEST(DuplicateFinderTest, IgnoresFilesWithDifferentSizes) {
     write_file(first, "a");
     write_file(second, "aa");
 
-    const DuplicateFinder finder;
+    wxm::ThreadPool pool(2, 8, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(root);
 
     EXPECT_EQ(report.scannedFiles, 2u);
@@ -84,7 +87,8 @@ TEST(DuplicateFinderTest, DoesNotReportUniqueSameSizeDifferentContent) {
     write_file(first, "ab");
     write_file(second, "cd");
 
-    const DuplicateFinder finder;
+    wxm::ThreadPool pool(2, 8, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(root);
 
     EXPECT_EQ(report.scannedFiles, 2u);
@@ -103,12 +107,13 @@ TEST(DuplicateFinderTest, ReportsScannedAndHashedCounts) {
     write_file(second, "two");
     write_file(third, "larger");
 
-    const DuplicateFinder finder;
+    wxm::ThreadPool pool(2, 8, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(root);
 
     EXPECT_EQ(report.scannedFiles, 3u);
     EXPECT_EQ(report.hashedFiles, 2u);
-    EXPECT_EQ(report.errorCount, 0u);
+    EXPECT_EQ(report.errors.size(), 0u);
 
     remove_file_tree(root, std::vector<std::string>{ first, second, third });
 }
@@ -129,7 +134,8 @@ TEST(DuplicateFinderTest, HandlesManyDuplicateCandidates) {
         files.push_back(path);
     }
 
-    const DuplicateFinder finder;
+    wxm::ThreadPool pool(2, 8, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(root);
 
     ASSERT_EQ(report.groups.size(), 1u);
@@ -139,22 +145,34 @@ TEST(DuplicateFinderTest, HandlesManyDuplicateCandidates) {
     remove_file_tree(root, files);
 }
 
-TEST(DuplicateFinderTest, UsesConfiguredThreadCount) {
+TEST(DuplicateFinderTest, UsesInjectedThreadPool) {
     const std::string root = make_temp_dir();
     const std::string first = root + "/a.txt";
     const std::string second = root + "/b.txt";
     write_file(first, "same");
     write_file(second, "same");
 
-    DuplicateFinderConfig config;
-    config.threadCount = 1;
-    config.queueCapacity = 2;
-    const DuplicateFinder finder(config);
+    wxm::ThreadPool pool(1, 2, false, 1000);
+    const DuplicateFinder finder(pool);
     const DuplicateReport report = finder.find_duplicates(root);
-
-    EXPECT_EQ(report.threadCount, 1);
     ASSERT_EQ(report.groups.size(), 1u);
     EXPECT_EQ(report.groups[0].paths.size(), 2u);
 
     remove_file_tree(root, std::vector<std::string>{ first, second });
+}
+
+TEST(DuplicateFinderTest, ReportsWalkErrors) {
+    const std::string missingPath = "/tmp/threadpool_duplicate_finder_missing_path_for_test";
+
+    wxm::ThreadPool pool(2, 8, false, 1000);
+    const DuplicateFinder finder(pool);
+    const DuplicateReport report = finder.find_duplicates(missingPath);
+
+    EXPECT_EQ(report.scannedFiles, 0u);
+    EXPECT_EQ(report.hashedFiles, 0u);
+    EXPECT_TRUE(report.groups.empty());
+    ASSERT_EQ(report.errors.size(), 1u);
+    EXPECT_EQ(report.errors[0].phase, FileError::Phase::SCAN);
+    EXPECT_EQ(report.errors[0].path, missingPath);
+    EXPECT_NE(report.errors[0].message.find("lstat failed"), std::string::npos);
 }

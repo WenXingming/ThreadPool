@@ -91,7 +91,7 @@ TEST(HasherTest, EmptyFileCanBeHashed) {
     const HashResult result = hasher.hash_file(file_info(file));
 
     EXPECT_TRUE(result.ok);
-    EXPECT_EQ(result.error, "");
+    EXPECT_EQ(result.error.message, "");
 
     remove_file_tree(root, std::vector<std::string>{ file });
 }
@@ -102,7 +102,7 @@ TEST(HasherTest, MissingFileReturnsError) {
     const HashResult result = hasher.hash_file(FileInfo{ "/tmp/threadpool_hasher_missing_file_for_test", 0 });
 
     EXPECT_FALSE(result.ok);
-    EXPECT_FALSE(result.error.empty());
+    EXPECT_FALSE(result.error.message.empty());
 }
 
 TEST(HasherTest, SmallBufferMatchesDefaultBuffer) {
