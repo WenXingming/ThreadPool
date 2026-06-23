@@ -30,7 +30,7 @@ struct DuplicateReport {
 
 class DuplicateFinder {
 public:
-    explicit DuplicateFinder(wxm::ThreadPool& pool);
+    explicit DuplicateFinder(wxm::ThreadPool& pool, const FileWalker& fileWalker, const Hasher& hasher);
 
     DuplicateReport find_duplicates(const std::string& rootPath) const;
 
@@ -43,6 +43,6 @@ private:
     DuplicateReport assemble_report(const FileWalkResult& walkResult, const std::vector<HashResult>& hashResults, const std::vector<DuplicateGroup>& duplicateGroups) const;
 
     wxm::ThreadPool& pool_;
-    FileWalker fileWalker_;
-    Hasher hasher_;
+    const FileWalker& fileWalker_;
+    const Hasher& hasher_;
 };

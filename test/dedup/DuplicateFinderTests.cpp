@@ -50,7 +50,9 @@ TEST(DuplicateFinderTest, FindsDuplicateFilesByContent) {
     write_file(third, "different");
 
     wxm::ThreadPool pool(2, 8, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(root);
 
     ASSERT_EQ(report.groups.size(), 1u);
@@ -70,7 +72,9 @@ TEST(DuplicateFinderTest, IgnoresFilesWithDifferentSizes) {
     write_file(second, "aa");
 
     wxm::ThreadPool pool(2, 8, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(root);
 
     EXPECT_EQ(report.scannedFiles, 2u);
@@ -88,7 +92,9 @@ TEST(DuplicateFinderTest, DoesNotReportUniqueSameSizeDifferentContent) {
     write_file(second, "cd");
 
     wxm::ThreadPool pool(2, 8, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(root);
 
     EXPECT_EQ(report.scannedFiles, 2u);
@@ -108,7 +114,9 @@ TEST(DuplicateFinderTest, ReportsScannedAndHashedCounts) {
     write_file(third, "larger");
 
     wxm::ThreadPool pool(2, 8, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(root);
 
     EXPECT_EQ(report.scannedFiles, 3u);
@@ -135,7 +143,9 @@ TEST(DuplicateFinderTest, HandlesManyDuplicateCandidates) {
     }
 
     wxm::ThreadPool pool(2, 8, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(root);
 
     ASSERT_EQ(report.groups.size(), 1u);
@@ -153,7 +163,9 @@ TEST(DuplicateFinderTest, UsesInjectedThreadPool) {
     write_file(second, "same");
 
     wxm::ThreadPool pool(1, 2, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(root);
     ASSERT_EQ(report.groups.size(), 1u);
     EXPECT_EQ(report.groups[0].paths.size(), 2u);
@@ -165,7 +177,9 @@ TEST(DuplicateFinderTest, ReportsWalkErrors) {
     const std::string missingPath = "/tmp/threadpool_duplicate_finder_missing_path_for_test";
 
     wxm::ThreadPool pool(2, 8, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(missingPath);
 
     EXPECT_EQ(report.scannedFiles, 0u);

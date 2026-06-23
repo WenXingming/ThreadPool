@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <future>
 
-DuplicateFinder::DuplicateFinder(wxm::ThreadPool& pool)
-    : pool_(pool) {
+DuplicateFinder::DuplicateFinder(wxm::ThreadPool& pool, const FileWalker& fileWalker, const Hasher& hasher)
+    : pool_(pool), fileWalker_(fileWalker), hasher_(hasher) {
 }
 
 DuplicateReport DuplicateFinder::find_duplicates(const std::string& rootPath) const {

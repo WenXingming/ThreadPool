@@ -105,7 +105,9 @@ int main(int argc, char* argv[]) {
     }
 
     wxm::ThreadPool pool(threadCount, threadCount * 4, false, 1000);
-    const DuplicateFinder finder(pool);
+    FileWalker walker;
+    Hasher hasher;
+    const DuplicateFinder finder(pool, walker, hasher);
     const DuplicateReport report = finder.find_duplicates(directory);
     print_report(report, threadCount);
     return 0;
