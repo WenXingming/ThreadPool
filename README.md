@@ -32,6 +32,8 @@ cmake --build build-bench
 
 Google Benchmark target 会单独使用 C++17 构建；线程池和 dedup 业务代码仍保持 C++11。
 
+详细基线方法和结果记录模板见 [docs/dedup_benchmark.md](docs/dedup_benchmark.md)。
+
 如果需要机器可读输出，可以使用 Google Benchmark 的 JSON 输出：
 
 ```bash
