@@ -12,4 +12,4 @@ file(GLOB_RECURSE DEDUP_HEADERS CONFIGURE_DEPENDS
 
 add_executable(dedup ${DEDUP_SOURCES} ${DEDUP_HEADERS})
 target_include_directories(dedup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(dedup PRIVATE ThreadPool)
+target_link_libraries(dedup PRIVATE ThreadPool CLI11::CLI11)
