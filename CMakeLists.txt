@@ -1,10 +1,11 @@
 
 # ============================================================================
-# TopLevel CMakeLists - 项目顶层构建入口
+# TopLevel CMakeLists - ThreadPool project entry
 # ============================================================================
 # 核心功能和接口：
-# 1. 配置全局 C++ 标准和测试开关。
-# 2. 组织核心库、examples 和 test 子目录构建。
+# 1. 配置线程池库的 C++ 标准。
+# 2. 作为顶层项目时构建 examples 和 test。
+# 3. 作为 FetchContent 子项目时只暴露 ThreadPool target。
 # ============================================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -14,25 +15,19 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(BUILD_BENCHMARKS "Build benchmark targets" OFF)
+add_subdirectory(src)
 
-include(FetchContent)
-FetchContent_Declare(
-  cli11
-  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-  GIT_TAG        v2.4.1
-)
-FetchContent_MakeAvailable(cli11)
+# 判断当前是否作为顶层独立项目构建。如果是通过 FetchContent 或 add_subdirectory 引入，则跳过测试和示例的编译。
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    option(THREADPOOL_BUILD_EXAMPLES "Build ThreadPool examples" ON)
 
-include(CTest)
+    include(CTest)
 
-add_subdirectory(src/threadpool)
-add_subdirectory(src/dedup)
-add_subdirectory(examples)
-if(BUILD_TESTING)
-    add_subdirectory(test/threadpool)
-    add_subdirectory(test/dedup)
-endif()
-if(BUILD_BENCHMARKS)
-    add_subdirectory(benchmark/dedup)
+    if(THREADPOOL_BUILD_EXAMPLES)
+        add_subdirectory(examples)
+    endif()
+
+    if(BUILD_TESTING)
+        add_subdirectory(test)
+    endif()
 endif()

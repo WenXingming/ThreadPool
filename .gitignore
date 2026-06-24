@@ -3,13 +3,10 @@
 
 # build artifacts
 build/
+build-bench*/
 
 # skills
 .agents/
 
 # codex
 .codex/
-
-# benchmark
-build-bench*/
-benchmark/dedup/results/*

@@ -1,5 +1,5 @@
 # ============================================================================
-# threadpool/CMakeLists - ThreadPool library target
+# src/CMakeLists - ThreadPool library target
 # 核心功能和接口：
 # 1. 收集线程池源文件和头文件。
 # 2. 生成 ThreadPool 库并配置头文件包含路径。
